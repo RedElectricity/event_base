@@ -8,7 +8,7 @@ use crate::dead_letter::{DeadLetterMessage, DeadReason};
 use crate::error::CoreError;
 use crate::handler::EHandler;
 use crate::handler::Ack::{Ack, Dead, NoAck};
-use crate::message::{EMessage, MessageMetadata, MessageTopic};
+use crate::message::{DeliveryMode, EMessage, MessageMetadata, MessageTopic};
 use crate::message::DeliveryMode::{Broadcast, Repeated};
 use crate::queues::{EConsumer, EProducer};
 use crate::shutdown::ShutdownReceiver;
@@ -102,7 +102,8 @@ impl Worker{
                     self.send_to_dead_letter(msg, DeadReason::MaxRetriesExceeded).await.expect("Fail to send to Dead Letter");
                 } else {
                     if let Some(delay) = retry_after {
-                        // TODO: 发送到延迟队列（Host 调度）
+                        msg.deliver_at = SystemTime::now().checked_add(delay);
+                        TopicRouter::global().send(&msg.clone().topic.0, msg).await.expect("Fail to requeue the NoAck msg");
                     } else {
                         if let Err(e) = self.producer.send(msg.clone()).await {
                             tracing::error!("Failed to requeue message {}: {}", &msg.id, e);
