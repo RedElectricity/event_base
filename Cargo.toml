@@ -1,0 +1,14 @@
+[package]
+name = "event_base"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[workspace]
+members = [
+    "event_base_core",
+    "event_base_wal",
+    "event_base_marco"
+, "event_base_test"]
+resolver = "3"
