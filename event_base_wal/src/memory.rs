@@ -1,8 +1,9 @@
+use event_base_core::error::CoreError;
+use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use event_base_core::error::CoreError;
-use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
+use event_base_core::error::wal::WalError;
 
 #[derive(Default, Clone)]
 pub struct MemoryWal {
@@ -28,21 +29,27 @@ impl Wal for MemoryWal {
         Ok(())
     }
 
-    async fn update_state(&mut self, message_id: &str, status: WalRecordState) -> Result<(), CoreError> {
+    async fn update_state(
+        &mut self,
+        message_id: &str,
+        status: WalRecordState,
+    ) -> Result<(), CoreError> {
         let mut records = self.records.lock().unwrap();
         if let Some(record) = records.get_mut(message_id) {
             record.status = status;
             Ok(())
         } else {
-            Err(CoreError::WalRecordNotFound(message_id.to_string()))
+            Err(CoreError::from(WalError::RecordNotFound(message_id.to_string())))
         }
     }
 
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError> {
-        let mut records = self.records.lock().unwrap();
-        let pendings = records.values()
-            .filter(|x| {x.status == WalRecordState::Pending})
-            .cloned().collect();
+        let records = self.records.lock().unwrap();
+        let pendings = records
+            .values()
+            .filter(|x| x.status == WalRecordState::Pending)
+            .cloned()
+            .collect();
         Ok(pendings)
     }
 
@@ -59,7 +66,7 @@ impl Wal for MemoryWal {
         Ok(())
     }
 
-    async fn fetch_ready(&self, now: SystemTime) -> Result<Vec<WalRecord>, CoreError> {
+    async fn fetch_ready(&self, _now: SystemTime) -> Result<Vec<WalRecord>, CoreError> {
         let mut delays = self.delays.lock().unwrap();
         let mut ready = Vec::new();
 

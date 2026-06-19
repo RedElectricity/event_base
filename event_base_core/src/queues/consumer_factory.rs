@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::queues::EConsumer;
+use std::sync::Arc;
 
 pub trait ConsumerFactory: Send + Sync {
     fn create_consumer(&self) -> Box<dyn EConsumer>;

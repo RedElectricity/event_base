@@ -1,16 +1,19 @@
-use std::time::SystemTime;
+use crate::dead_letter::DeadReason;
+use crate::error::CoreError;
+use crate::message::EMessage;
 use async_trait::async_trait;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use crate::dead_letter::DeadReason;
-use crate::error::CoreError;
-use crate::message::{EMessage, MessageMetadata, MessagePayload, MessageTopic};
+use std::time::SystemTime;
 
 #[async_trait]
 pub trait Wal: Send + Sync {
     async fn append(&mut self, record: WalRecord) -> Result<(), CoreError>;
-    async fn update_state(&mut self, message_id: &str, status: WalRecordState) -> Result<(), CoreError>;
+    async fn update_state(
+        &mut self,
+        message_id: &str,
+        status: WalRecordState,
+    ) -> Result<(), CoreError>;
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError>;
     async fn flush(&mut self) -> Result<(), CoreError>;
 

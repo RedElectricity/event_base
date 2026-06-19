@@ -1,7 +1,7 @@
-use std::time::SystemTime;
+use crate::message::EMessage;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use crate::message::EMessage;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct DeadLetterMessage {

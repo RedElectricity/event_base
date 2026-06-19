@@ -1,8 +1,7 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use bincode::{Decode, Encode};
 use uuid::Uuid;
-use crate::dead_letter::DeadReason;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct EMessage {
@@ -19,14 +18,14 @@ pub struct EMessage {
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
 pub enum DeliveryMode {
     Standard,
-    Repeated(u32),  // 需要 N 个不同 Worker 消费
+    Repeated(u32), // 需要 N 个不同 Worker 消费
     Broadcast,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct MessageTopic(pub String);
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct MessagePayload(pub Vec<u8>);
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
@@ -40,11 +39,11 @@ pub struct MessageMetadata {
 
 impl EMessage {
     pub fn new(topic: MessageTopic, payload: MessagePayload, delivery_mode: DeliveryMode) -> Self {
-        EMessage{
+        EMessage {
             id: Uuid::new_v4().to_string(),
             topic,
             payload,
-            metadata: MessageMetadata{
+            metadata: MessageMetadata {
                 created_at: SystemTime::now(),
                 trace_id: None,
                 correlation_id: None,
@@ -58,8 +57,29 @@ impl EMessage {
         }
     }
 
-    fn increment_attempts(&mut self){
+    fn increment_attempts(&mut self) {
         self.attempts += 1;
+    }
+}
+
+impl Default for EMessage {
+    fn default() -> Self {
+        Self {
+            id: "".to_string(),
+            topic: Default::default(),
+            payload: Default::default(),
+            metadata: MessageMetadata {
+                created_at: SystemTime::now(),
+                trace_id: None,
+                correlation_id: None,
+                causation_id: None,
+                source: None,
+            },
+            attempts: 0,
+            delivery_mode: DeliveryMode::Standard,
+            consumed_count: 0,
+            deliver_at: None,
+        }
     }
 }
 

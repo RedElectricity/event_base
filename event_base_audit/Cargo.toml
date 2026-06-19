@@ -1,0 +1,9 @@
+[package]
+name = "event_base_audit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+event_base_core = { path = "../event_base_core" }
+async-trait = "0.1.89"
+chrono = "0.4.45"

@@ -1,0 +1,9 @@
+[package]
+name = "event_base_middleware"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.89"
+event_base_core = { path = "../event_base_core" }
+tracing = "0.1.44"

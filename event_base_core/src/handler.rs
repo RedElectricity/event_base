@@ -1,16 +1,25 @@
-use std::io::Error;
-use std::time::Duration;
-use dynify::dynify;
-use crate::error::CoreError;
 use crate::message::EMessage;
+use async_trait::async_trait;
+use std::time::Duration;
 
+#[derive(Debug)]
 pub enum Ack {
     Ack,
-    NoAck { retry_after: Option<Duration> , max_retries: u32 },
+    NoAck {
+        retry_after: Option<Duration>,
+        max_retries: u32,
+    },
     Dead,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait EHandler: Send + Sync {
     async fn handle(&self, msg: &EMessage) -> Ack;
+}
+
+#[async_trait]
+impl EHandler for Box<dyn EHandler> {
+    async fn handle(&self, msg: &EMessage) -> Ack {
+        self.as_ref().handle(msg).await
+    }
 }

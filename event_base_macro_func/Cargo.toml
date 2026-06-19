@@ -1,0 +1,6 @@
+[package]
+name = "event_base_macro_func"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

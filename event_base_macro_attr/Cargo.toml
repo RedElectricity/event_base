@@ -1,5 +1,5 @@
 [package]
-name = "event_base_marco"
+name = "event_base_macro_attr"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,6 +7,7 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
+darling = "0.23.0"
 linkme = "0.3.36"
 proc-macro2 = "1.0"
 quote = "1.0"

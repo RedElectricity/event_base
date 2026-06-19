@@ -1,10 +1,12 @@
-use linkme::distributed_slice;
-use std::pin::Pin;
-use std::future::Future;
 use crate::error::CoreError;
 use crate::shutdown::ShutdownSender;
+use linkme::distributed_slice;
+use std::future::Future;
+use std::pin::Pin;
 
-pub type RegisterFn = dyn Fn(ShutdownSender) -> Pin<Box<dyn Future<Output = Result<(), CoreError>> + Send>> + Send + Sync;
+pub type RegisterFn = dyn Fn(ShutdownSender) -> Pin<Box<dyn Future<Output = Result<(), CoreError>> + Send>>
+    + Send
+    + Sync;
 
 #[distributed_slice]
 pub static HANDLER_REGISTRY: [HandlerEntry] = [..];

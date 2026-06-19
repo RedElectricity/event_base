@@ -1,12 +1,14 @@
-use std::collections::HashMap;
-use std::path::{PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
-use tokio::fs;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode, config};
 use event_base_core::error::CoreError;
 use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
+use tokio::fs;
+use event_base_core::error::serialize::SerializeError;
+use event_base_core::error::wal::WalError;
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 struct WalStore {
@@ -28,9 +30,16 @@ impl PersistentWal {
         let path = PathBuf::from(file_path.clone());
         if path.exists() {
             let data = fs::read(&path).await;
-            let (store, _): (WalStore, _) = bincode::decode_from_slice(&data.unwrap().as_slice(), config::standard()).unwrap();
+            let (store, _): (WalStore, _) =
+                bincode::decode_from_slice(&data.unwrap().as_slice(), config::standard()).unwrap();
             Self {
-                records: Arc::new(Mutex::new(store.records.into_iter().map(|r| (r.message.id.clone(), r)).collect())),
+                records: Arc::new(Mutex::new(
+                    store
+                        .records
+                        .into_iter()
+                        .map(|r| (r.message.id.clone(), r))
+                        .collect(),
+                )),
                 delays: Arc::new(Mutex::new(Default::default())),
                 id_counter: Arc::new(Mutex::new(store.id_counter)),
                 file_path: file_path.clone(),
@@ -52,32 +61,52 @@ impl Wal for PersistentWal {
         Ok(())
     }
 
-    async fn update_state(&mut self, message_id: &str, status: WalRecordState) -> Result<(), CoreError> {
+    async fn update_state(
+        &mut self,
+        message_id: &str,
+        status: WalRecordState,
+    ) -> Result<(), CoreError> {
         let mut records = self.records.lock().unwrap();
         if let Some(record) = records.get_mut(message_id) {
             record.status = status;
             Ok(())
         } else {
-            Err(CoreError::WalRecordNotFound(message_id.to_string()))
+            Err(CoreError::from(WalError::RecordNotFound(message_id.to_string())))
         }
     }
 
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError> {
-        let mut records = self.records.lock().unwrap();
-        let pendings = records.values()
-            .filter(|x| {x.status == WalRecordState::Pending})
-            .cloned().collect();
+        let records = self.records.lock().unwrap();
+        let pendings = records
+            .values()
+            .filter(|x| x.status == WalRecordState::Pending)
+            .cloned()
+            .collect();
         Ok(pendings)
     }
 
     async fn flush(&mut self) -> Result<(), CoreError> {
         let store = WalStore {
-            records: self.records.clone().lock().unwrap().values().cloned().collect(),
-            delays: self.delays.clone().lock().unwrap().values().cloned().collect(),
+            records: self
+                .records
+                .clone()
+                .lock()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect(),
+            delays: self
+                .delays
+                .clone()
+                .lock()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect(),
             id_counter: self.id_counter.clone().lock().unwrap().clone(),
         };
-        let bytes = bincode::encode_to_vec(&store, config::standard()).
-            map_err(|e|{ CoreError::SerializeError(e.to_string()) })?;
+        let bytes = bincode::encode_to_vec(&store, config::standard())
+            .map_err(|e| SerializeError::SerializeError(e.to_string()))?;
         let temp_path = PathBuf::from(&self.file_path).with_extension("tmp");
         fs::write(&temp_path, bytes).await?;
         fs::rename(&temp_path, &self.file_path).await?;
@@ -101,7 +130,7 @@ impl Wal for PersistentWal {
             if delayed.message.deliver_at <= Option::from(SystemTime::now()) {
                 ready.push(delayed.clone());
                 delays.remove(&msg_id);
-            } 
+            }
         }
         Ok(ready)
     }
