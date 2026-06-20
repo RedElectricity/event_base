@@ -1,11 +1,11 @@
-use proc_macro::TokenStream;
-use darling::ast::NestedMeta;
-use quote::quote;
-use syn::{parse, Expr, ItemFn, Meta, Token};
 use darling::FromMeta;
+use darling::ast::NestedMeta;
+use proc_macro::TokenStream;
+use quote::quote;
 use syn::punctuated::Punctuated;
+use syn::{Expr, ItemFn, Meta, Token, parse};
 
-pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error>  {
+pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error> {
     let input_fn: ItemFn = parse(input)?;
     let args = HandlerArgs::from_attr_args(args)?;
 
@@ -30,10 +30,10 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                     quote! { pipeline = pipeline.with(#elem); }
                 });
                 quote! {{
-                let mut pipeline = Pipeline::new(handler);
-                #(#with_calls)*
-                pipeline.build()
-            }}
+                    let mut pipeline = Pipeline::new(handler);
+                    #(#with_calls)*
+                    pipeline.build()
+                }}
             } else {
                 // 单个中间件
                 quote! { Pipeline::new(handler).with(#mw_expr).build() }
@@ -127,6 +127,5 @@ impl HandlerArgs {
             }
         };
         Self::from_list(&attr_args)
-
     }
 }

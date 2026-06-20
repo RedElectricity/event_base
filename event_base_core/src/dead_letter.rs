@@ -2,6 +2,7 @@ use crate::message::EMessage;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct DeadLetterMessage {
@@ -11,16 +12,20 @@ pub struct DeadLetterMessage {
     pub attempts: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Error)]
 pub enum DeadReason {
-    /// 超过最大重试次数
+    #[error("Max Retries exceeded")]
     MaxRetriesExceeded,
-    /// Handler 显式返回 Dead
+
+    #[error("Handler Explicit")]
     Explicit,
-    /// 超时
+
+    #[error("Handler Timeout")]
     Timeout,
-    /// 找不到对应的 Handler
+
+    #[error("NoHandler")]
     NoHandler,
-    /// 其他原因
+
+    #[error("Handler Other Error: {0}")]
     Other(String),
 }

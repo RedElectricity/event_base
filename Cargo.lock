@@ -220,6 +220,7 @@ dependencies = [
  "async-trait",
  "event_base_core",
  "flume",
+ "tokio",
 ]
 
 [[package]]

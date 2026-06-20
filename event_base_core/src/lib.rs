@@ -15,3 +15,4 @@ pub mod trace_layer;
 pub mod traits;
 pub mod wal;
 pub mod worker;
+pub mod worker_registry;

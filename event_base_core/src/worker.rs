@@ -2,31 +2,44 @@ use crate::audit::{AuditEventType, AuditRecord, AuditResult};
 use crate::constant::SYSTEM_TOPIC_AUDIT;
 use crate::dead_letter::DeadReason;
 use crate::error::CoreError;
-use crate::error::serialize::SerializeError;
+use crate::error::serialize::SerializeError::SerializeError;
 use crate::handler::Ack::{Ack, Dead, NoAck};
-use crate::handler::EHandler;
-use crate::message::DeliveryMode::Repeated;
-use crate::message::{DeliveryMode, EMessage, MessageMetadata, MessagePayload, MessageTopic};
+use crate::message::DeliveryMode::{Repeated, Standard};
+use crate::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
+use crate::middleware::Pipeline;
 use crate::queues::{EConsumer, EProducer};
 use crate::shutdown::ShutdownReceiver;
+use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
 use crate::topic::TopicRouter;
-use crate::wal::wal::{Wal, WalRecord, WalRecordState};
+use crate::wal::sync::WalClient;
+use crate::worker::WorkerStatus::Working;
+use serde::Serialize;
 use std::option::Option;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
+use tracing::{error, warn};
 use uuid::Uuid;
-use crate::middleware::Pipeline;
 
 pub struct Worker {
     pub topic: String,
     pub name: String,
-    pub consumer: Box<dyn EConsumer>,
+    pub consumer: Arc<Mutex<Box<dyn EConsumer>>>,
     pub pipeline: Arc<Pipeline>,
     pub producer: Arc<dyn EProducer>,
     pub time_out: Option<Duration>,
-    pub shutdown_receiver: ShutdownReceiver,
-    wal: Option<Arc<tokio::sync::Mutex<dyn Wal>>>,
+    pub shutdown_receiver: Arc<Mutex<ShutdownReceiver>>,
+    pub shutdown_check_interval: Duration,
+    pub shutdown_timeout: Option<Duration>,
+    status: Arc<Mutex<WorkerStatus>>,
+    wal: WalClient,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerStatus {
+    Idle,
+    Working,
 }
 
 impl Worker {
@@ -36,39 +49,46 @@ impl Worker {
         pipeline: Arc<Pipeline>,
         producer: Arc<dyn EProducer>,
         time_out: Option<Duration>,
+        shutdown_check_interval: Duration,
+        shutdown_timeout: Option<Duration>,
         shutdown_receiver: ShutdownReceiver,
-        wal: Arc<tokio::sync::Mutex<dyn Wal>>,
     ) -> Self {
-        let wal = Some(wal);
         let name = format!("worker-{}-{}", topic, Uuid::new_v4());
         Self {
             topic,
-            name,
-            consumer,
+            name: name.clone(),
+            consumer: Arc::new(Mutex::new(consumer)),
             pipeline,
             producer,
             time_out,
-            shutdown_receiver,
-            wal,
+            shutdown_check_interval,
+            shutdown_timeout,
+            shutdown_receiver: Arc::new(Mutex::new(shutdown_receiver)),
+            status: Arc::new(Mutex::new(WorkerStatus::Idle)),
+            wal: WalClient::new(name),
         }
     }
-    pub async fn start(&mut self) {
-        // 主消费循环
+    pub async fn start(&self) {
+        let mut shutdown_receiver = self.shutdown_receiver.lock().await;
+        let mut consumer = self.consumer.lock().await;
+
         loop {
             tokio::select! {
-                _ = self.shutdown_receiver.recv() => {
+                _ = shutdown_receiver.recv() => {
+                    self.shutdown(self.shutdown_check_interval, Option::from(self.shutdown_timeout)).await;
                     break;
                 }
-                msg = self.consumer.receive() => {
+                msg = consumer.receive() => {
+                    self.set_status(WorkerStatus::Working).await;
                     let msg = msg.unwrap();
                     self.process_msg(msg).await;
-
+                    self.set_status(WorkerStatus::Idle).await;
                 }
             }
         }
     }
 
-    async fn process_msg(&mut self, mut msg: EMessage) {
+    async fn process_msg(&self, mut msg: EMessage) {
         if self.topic != SYSTEM_TOPIC_AUDIT {
             if let Err(e) = self
                 .send_audit_msg(self.generate_audit_msg(
@@ -85,8 +105,10 @@ impl Worker {
 
         let start_time = SystemTime::now();
 
-        self.update_wal(&msg.id, WalRecordState::Processing).await;
-
+        self.wal
+            .mark_processing(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
+            .await
+            .expect("Fail to push WAL msg when mark the msg as processing");
         let status;
 
         if let Some(time) = self.time_out {
@@ -94,7 +116,11 @@ impl Worker {
                 Ok(result) => {
                     status = result;
                 }
-                Err(_) => status = Dead,
+                Err(_) => {
+                    status = Dead {
+                        dead_reason: DeadReason::Timeout,
+                    };
+                }
             }
         } else {
             status = self.pipeline.run(&mut msg).await;
@@ -112,11 +138,21 @@ impl Worker {
                 if let Repeated(times) = msg.delivery_mode {
                     msg.consumed_count += 1;
                     if times == msg.consumed_count {
-                        self.update_wal(&msg.id, WalRecordState::Complete).await;
+                        self.wal
+                            .mark_complete(
+                                msg.clone().id.as_str(),
+                                msg.clone().topic.0.as_str(),
+                                msg.clone().attempts,
+                            )
+                            .await
+                            .expect("Fail to push WAL msg when mark the msg as complete");
                         return;
                     }
-                    self.update_wal(&msg.id, WalRecordState::Pending).await;
-                    self.producer.send(msg).await.expect("Fail to requeue msg");
+                    self.wal
+                        .mark_pending(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
+                        .await
+                        .expect("Fail to push WAL msg when mark the msg as pending");
+                    self.requeue_message(msg).await;
                     return;
                 }
                 if self.topic != SYSTEM_TOPIC_AUDIT {
@@ -132,7 +168,14 @@ impl Worker {
                         eprintln!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
                     }
                 }
-                self.update_wal(&msg.id, WalRecordState::Complete).await;
+                self.wal
+                    .mark_complete(
+                        msg.clone().id.as_str(),
+                        msg.clone().topic.0.as_str(),
+                        msg.clone().attempts,
+                    )
+                    .await
+                    .expect("Fail to push WAL msg when mark the msg as complete");
             }
 
             NoAck {
@@ -140,7 +183,10 @@ impl Worker {
                 max_retries,
             } => {
                 msg.attempts += 1;
-                self.update_wal(&msg.id, WalRecordState::Pending).await;
+                self.wal
+                    .mark_pending(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
+                    .await
+                    .expect("Fail to push WAL msg when mark the msg as pending");
 
                 if msg.attempts >= max_retries {
                     self.send_to_dead_letter(
@@ -164,8 +210,16 @@ impl Worker {
                     }
                 }
             }
-            Dead => {
-                self.update_wal(&msg.id, WalRecordState::Failed).await;
+            Dead { dead_reason } => {
+                self.wal
+                    .mark_dead_letter(
+                        msg.clone().id.as_str(),
+                        msg.clone().topic.0.as_str(),
+                        msg.clone().attempts,
+                        dead_reason.to_string(),
+                    )
+                    .await
+                    .expect("Fail to push WAL msg when mark the msg to dead letter");
                 if let Err(e) = self
                     .send_to_dead_letter(msg.clone(), DeadReason::Explicit, process_time)
                     .await
@@ -177,15 +231,11 @@ impl Worker {
     }
 
     async fn requeue_message(&self, msg: EMessage) {
-        self.update_wal(&msg.id, WalRecordState::Pending).await;
+        self.wal
+            .mark_pending(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
+            .await
+            .expect("Fail to push WAL msg when mark the msg as pending");
         let _ = self.producer.send(msg).await;
-    }
-
-    async fn update_wal(&self, msg_id: &str, state: WalRecordState) {
-        if let Some(wal) = &self.wal {
-            let mut wal = wal.lock().await;
-            let _ = wal.update_state(msg_id, state).await;
-        }
     }
 
     fn generate_audit_msg(
@@ -207,15 +257,11 @@ impl Worker {
         }
     }
 
-    async fn send_audit_msg(&mut self, msg: AuditRecord) -> Result<(), CoreError> {
+    async fn send_audit_msg(&self, msg: AuditRecord) -> Result<(), CoreError> {
         let audit_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_AUDIT.parse().unwrap()),
-            MessagePayload(
-                serde_json::to_vec(&msg)
-                    .map_err(|e| SerializeError::SerializeError(e.to_string()))
-                    .unwrap(),
-            ),
-            DeliveryMode::Standard,
+            MessagePayload(serde_json::to_vec(&msg).map_err(|e| SerializeError(e.to_string()))?),
+            Standard,
         );
         TopicRouter::global()
             .send(SYSTEM_TOPIC_AUDIT, audit_msg)
@@ -225,7 +271,7 @@ impl Worker {
     }
 
     async fn send_to_dead_letter(
-        &mut self,
+        &self,
         mut msg: EMessage,
         reason: DeadReason,
         process_time: Duration,
@@ -233,19 +279,15 @@ impl Worker {
         let dead_letter_topic_name = format!("dead_letter.{}", self.topic);
         msg.topic = MessageTopic(dead_letter_topic_name.clone());
 
-        if let Some(wal) = &mut self.wal {
-            let mut wal = wal.lock().await;
-            let _ = wal
-                .append(WalRecord {
-                    record_id: 0, // Auto Generate
-                    message: msg.clone(),
-                    status: WalRecordState::Failed,
-                    last_attempt_at: None,
-                    is_dead_letter: true,
-                    dead_reason: Some(reason),
-                })
-                .await?;
-        }
+        self.wal
+            .mark_dead_letter(
+                msg.clone().id.as_str(),
+                msg.clone().topic.0.as_str(),
+                msg.clone().attempts,
+                reason.to_string(),
+            )
+            .await
+            .expect("Fail to push WAL msg when mark the msg to dead letter");
 
         TopicRouter::global()
             .send(&dead_letter_topic_name, msg.clone())
@@ -265,5 +307,52 @@ impl Worker {
             }
         }
         Ok(())
+    }
+
+    pub async fn shutdown(&self, check_interval: Duration, timeout: Option<Duration>) {
+        let start = SystemTime::now();
+
+        while self.get_status().await == Working {
+            if let Some(to) = timeout {
+                if start.elapsed().unwrap_or_default() > to {
+                    warn!(
+                        "[SHUTDOWN] Worker {} shutdown timeout, force exit",
+                        self.name.clone()
+                    );
+                    break;
+                }
+            }
+            tokio::time::sleep(check_interval).await;
+        }
+
+        let ack = ShutdownAck {
+            worker_name: "".to_string(),
+            status: ShutdownStatus::Completed,
+            timestamp: SystemTime::now(),
+            error: None,
+        };
+
+        let ack_msg = EMessage::new(
+            MessageTopic(SYSTEM_TOPIC_AUDIT.to_string()),
+            MessagePayload(
+                serde_json::to_vec(&ack)
+                    .map_err(|e| error!("{}", SerializeError(e.to_string()).to_string()))
+                    .unwrap(),
+            ),
+            Standard,
+        );
+
+        TopicRouter::global()
+            .send(SYSTEM_TOPIC_AUDIT, ack_msg)
+            .await
+            .expect("[SHUTDOWN ACK] Fail to send shutdown ack message");
+    }
+
+    async fn set_status(&self, status: WorkerStatus) {
+        *self.status.lock().await = status;
+    }
+
+    pub async fn get_status(&self) -> WorkerStatus {
+        *self.status.lock().await
     }
 }

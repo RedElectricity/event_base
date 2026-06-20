@@ -3,6 +3,7 @@ use crate::error::topic::TopicError;
 use crate::handler::EHandler;
 use crate::message::DeliveryMode::Broadcast;
 use crate::message::{EMessage, MessageTopic};
+use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
 use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
@@ -14,7 +15,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use crate::middleware::Pipeline;
+use tokio::task::JoinHandle;
 
 static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
 
@@ -22,13 +23,14 @@ pub struct TopicRouter {
     inner: RwLock<HashMap<String, TopicEntry>>,
     factory: Arc<dyn QueueFactory>,
     wal: Option<Arc<tokio::sync::Mutex<dyn Wal>>>,
+    workers: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>,
 }
 
 struct TopicEntry {
     pub producer: Arc<dyn EProducer>,
     pub consumer_factory: Arc<dyn ConsumerFactory>,
     pub handler: Arc<dyn EHandler>,
-    pub workers: Vec<Arc<Worker>>,
+    pub workers: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -47,10 +49,11 @@ impl TopicRouter {
             inner: RwLock::new(HashMap::new()),
             factory,
             wal,
+            workers: RwLock::new(HashMap::new()),
         });
         TOPIC_ROUTER
             .set(router)
-            .map_err(|_| CoreError::AlreadyInitialized())?;
+            .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
 
@@ -133,7 +136,7 @@ impl TopicRouter {
 
         if msg.deliver_at != None {
             if msg.deliver_at < Option::from(SystemTime::now()) {
-                return Err(CoreError::ErrorTime());
+                return Err(CoreError::ErrorTime);
             }
             if let Some(wal) = &self.wal {
                 let record = WalRecord::from_msg(msg.clone());
@@ -146,9 +149,11 @@ impl TopicRouter {
         if msg.delivery_mode == Broadcast {
             let mut map = self.inner.write().await;
             if let Some(entry) = map.get_mut(topic) {
-                for worker in &entry.workers {
+                for worker_index in &entry.workers {
+                    let workers = self.workers.read().await;
+                    let (worker, _) = workers.get(worker_index).unwrap();
                     let mut copy = msg.clone();
-                    copy.id = format!("{}-{}", msg.id, worker.name);
+                    copy.id = format!("{}-{}", msg.id, worker.clone().name);
                     worker.producer.send(copy).await?;
                 }
             }
@@ -204,10 +209,17 @@ impl TopicRouter {
         map.keys().cloned().collect()
     }
 
-    pub async fn register_worker(&self, topic: &str, worker: Arc<Worker>) -> Result<(), CoreError> {
+    pub async fn register_worker(
+        &self,
+        topic: &str,
+        worker: Arc<Worker>,
+        handle: JoinHandle<()>,
+    ) -> Result<(), CoreError> {
         let mut map = self.inner.write().await;
+        let mut workers_map = self.workers.write().await;
+        workers_map.insert(worker.name.clone(), (worker.clone(), handle));
         if let Some(entry) = map.get_mut(topic) {
-            entry.workers.push(worker);
+            entry.workers.push(worker.name.clone());
             Ok(())
         } else {
             Err(CoreError::from(TopicError::NotFound(topic.to_string())))
@@ -218,10 +230,11 @@ impl TopicRouter {
         &self,
         topic: &str,
         pipeline: Arc<Pipeline>,
-        wal: Arc<tokio::sync::Mutex<dyn Wal>>,
         timeout: Option<Duration>,
+        shutdown_timeout: Option<Duration>,
+        shutdown_check_interval: Option<Duration>,
         shutdown_rx: ShutdownReceiver,
-    ) -> Result<Arc<Worker>, CoreError> {
+    ) -> Result<String, CoreError> {
         let (producer, consumer_factory) = {
             let map = self.inner.read().await;
             let entry = map
@@ -244,12 +257,72 @@ impl TopicRouter {
             pipeline,
             producer.clone(),
             timeout,
+            shutdown_check_interval.unwrap_or(Duration::from_millis(50)),
+            shutdown_timeout,
             shutdown_rx,
-            wal,
         ));
 
-        self.register_worker(topic, worker.clone()).await?;
+        let worker_handle = worker.clone();
 
-        Ok(worker)
+        let handle = tokio::spawn(async move {
+            worker_handle.start().await;
+        });
+
+        self.register_worker(topic, worker.clone(), handle).await?;
+
+        Ok(worker.name.clone())
+    }
+
+    pub async fn get_worker(&self, worker_name: &str) -> Arc<Worker> {
+        let workers = self.workers.read().await;
+        let (worker, _) = workers.get(worker_name).unwrap();
+        worker.clone()
+    }
+
+    pub async fn get_workers(&self, topic: &str) -> Vec<Arc<Worker>> {
+        let entries = self.inner.read().await;
+        let worker_map = self.workers.read().await;
+        let mut workers = Vec::new();
+        for worker_index in entries.get(topic).unwrap().workers.clone() {
+            workers.push(worker_map.get(&worker_index).unwrap().0.clone());
+        }
+        workers
+    }
+
+    pub async fn get_all_workers(&self) -> Vec<Arc<Worker>> {
+        let worker_map = self.workers.read().await;
+        let mut workers = Vec::new();
+        for worker_index in worker_map.keys() {
+            workers.push(worker_map.get(worker_index).unwrap().0.clone());
+        }
+        workers
+    }
+
+    pub async fn del_worker(&self, worker_name: &str) -> Result<(), CoreError> {
+        let mut workers = self.workers.write().await;
+        if let Some((_worker, handle)) = workers.remove(worker_name) {
+            handle.abort();
+            let mut map = self.inner.write().await;
+            for entry in map.values_mut() {
+                entry.workers.retain(|id| id != worker_name);
+            }
+            Ok(())
+        } else {
+            Err(CoreError::WorkerNotFound(worker_name.to_string()))
+        }
+    }
+
+    pub async fn del_workers(&self, topic: &str) -> Result<(), CoreError> {
+        let mut entries = self.inner.write().await;
+        let mut worker_map = self.workers.write().await;
+        if let Some(entry) = entries.get_mut(topic) {
+            for worker_index in entry.workers.clone() {
+                let (worker, handle) = worker_map.get(&worker_index).unwrap();
+                handle.abort();
+                worker_map.remove(&worker_index);
+            }
+        }
+        entries.remove(topic);
+        Ok(())
     }
 }

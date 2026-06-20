@@ -1,5 +1,7 @@
 use bincode::{Decode, Encode, config};
 use event_base_core::error::CoreError;
+use event_base_core::error::serialize::SerializeError;
+use event_base_core::error::wal::WalError;
 use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,8 +9,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tokio::fs;
-use event_base_core::error::serialize::SerializeError;
-use event_base_core::error::wal::WalError;
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 struct WalStore {
@@ -71,7 +71,9 @@ impl Wal for PersistentWal {
             record.status = status;
             Ok(())
         } else {
-            Err(CoreError::from(WalError::RecordNotFound(message_id.to_string())))
+            Err(CoreError::from(WalError::RecordNotFound(
+                message_id.to_string(),
+            )))
         }
     }
 

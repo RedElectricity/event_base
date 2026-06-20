@@ -1,3 +1,4 @@
+use crate::dead_letter::DeadReason;
 use crate::message::EMessage;
 use async_trait::async_trait;
 use std::time::Duration;
@@ -9,7 +10,9 @@ pub enum Ack {
         retry_after: Option<Duration>,
         max_retries: u32,
     },
-    Dead,
+    Dead {
+        dead_reason: DeadReason,
+    },
 }
 
 #[async_trait]
@@ -20,6 +23,6 @@ pub trait EHandler: Send + Sync {
 #[async_trait]
 impl EHandler for Box<dyn EHandler> {
     async fn handle(&self, msg: &EMessage) -> Ack {
-        self.as_ref().handle(msg).await
+        self.handle(msg).await
     }
 }

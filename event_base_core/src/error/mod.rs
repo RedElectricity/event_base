@@ -60,13 +60,16 @@ pub enum CoreError {
     TaskJoinError(String),
 
     #[error("Object already exists")]
-    AlreadyInitialized(),
+    AlreadyInitialized,
 
     #[error("Error Time")]
-    ErrorTime(),
+    ErrorTime,
 
     #[error("Timeout: {0:?}")]
     Timeout(Duration),
+
+    #[error("Worker Not Found: {0}")]
+    WorkerNotFound(String),
 
     #[error("Unsupported: {0}")]
     Unsupported(String),

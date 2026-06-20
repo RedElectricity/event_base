@@ -1,12 +1,16 @@
+use async_trait::async_trait;
 use event_base_core::error::CoreError;
 use event_base_core::message::EMessage;
 use event_base_core::queues::consumer_factory::ConsumerFactory;
 use event_base_core::queues::factory::QueueFactory;
 use event_base_core::queues::{EConsumer, EProducer};
-use async_trait::async_trait;
+use event_base_core::worker_registry::{WorkerInfo, WorkerRegistry};
 use flume::{Receiver, Sender, bounded, unbounded};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct MemoryProducer {

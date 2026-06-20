@@ -1,9 +1,9 @@
 use event_base_core::error::CoreError;
+use event_base_core::error::wal::WalError;
 use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use event_base_core::error::wal::WalError;
 
 #[derive(Default, Clone)]
 pub struct MemoryWal {
@@ -39,7 +39,9 @@ impl Wal for MemoryWal {
             record.status = status;
             Ok(())
         } else {
-            Err(CoreError::from(WalError::RecordNotFound(message_id.to_string())))
+            Err(CoreError::from(WalError::RecordNotFound(
+                message_id.to_string(),
+            )))
         }
     }
 

@@ -10,8 +10,8 @@ macro_rules! send_msg {
 #[macro_export]
 macro_rules! start_queue_system {
     ($factory:expr, $wal:expr, $system_builder:expr) => {{
-        use event_base_core::topic::TopicRouter;
         use event_base_core::shutdown::shutdown_channel;
+        use event_base_core::topic::TopicRouter;
 
         let factory = std::sync::Arc::new($factory);
         let wal = $wal.map(std::sync::Arc::new);
