@@ -1,21 +1,11 @@
-use crate::audit::{AuditRecord, AuditWriter};
+use crate::audit::{AuditManager, AuditRecord};
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use async_trait::async_trait;
-use std::sync::Arc;
 
-pub struct SystemAuditHandler {
-    writers: Vec<Arc<dyn AuditWriter>>,
-}
-
-impl SystemAuditHandler {
-    pub fn new(writers: Vec<Arc<dyn AuditWriter>>) -> Self {
-        Self { writers }
-    }
-}
-
+pub struct AuditHandler {}
 #[async_trait]
-impl EHandler for SystemAuditHandler {
+impl EHandler for AuditHandler {
     async fn handle(&self, msg: &EMessage) -> Ack {
         let record: AuditRecord = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
@@ -24,16 +14,17 @@ impl EHandler for SystemAuditHandler {
                 return Ack::Ack;
             }
         };
+        
+        let audit_mgr = AuditManager::global();
 
-        for writer in &self.writers {
-            if let Err(e) = writer.write(&record).await {
-                eprintln!(
-                    "[AUDIT_ERROR] Audit writer failed for msg {}: {}",
-                    record.message_id, e
-                );
-            }
+
+        if let Err(e) = audit_mgr.record(record.clone()).await {
+            eprintln!(
+                "[AUDIT_ERROR] Audit writer failed for msg {}: {}",
+                record.message_id, e
+            );
         }
-
+        
         Ack::Ack
     }
 }

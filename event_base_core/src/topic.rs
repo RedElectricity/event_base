@@ -317,7 +317,7 @@ impl TopicRouter {
         let mut worker_map = self.workers.write().await;
         if let Some(entry) = entries.get_mut(topic) {
             for worker_index in entry.workers.clone() {
-                let (worker, handle) = worker_map.get(&worker_index).unwrap();
+                let (_, handle) = worker_map.get(&worker_index).unwrap();
                 handle.abort();
                 worker_map.remove(&worker_index);
             }

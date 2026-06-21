@@ -1,7 +1,12 @@
+use std::sync::{Arc, OnceLock};
 use crate::error::CoreError;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
+use ringbuf::consumer::Consumer;
+use ringbuf::HeapRb;
+use ringbuf::traits::RingBuffer;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditRecord {
@@ -20,7 +25,6 @@ pub enum AuditEventType {
     Enqueued,
     ProcessingStarted,
     ProcessingCompleted,
-    ProcessingFailed,
     Retry,
     DeadLettered,
 }
@@ -37,4 +41,44 @@ pub enum AuditResult {
 #[async_trait]
 pub trait AuditWriter: Send + Sync {
     async fn write(&self, record: &AuditRecord) -> Result<(), CoreError>;
+}
+
+static AUDIT_MANAGER: OnceLock<Arc<AuditManager>> = OnceLock::new();
+
+pub struct AuditManager {
+    buffer: Arc<RwLock<HeapRb<AuditRecord>>>,
+    pub writers: Vec<Arc<dyn AuditWriter>>,
+}
+
+impl AuditManager {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            buffer: Arc::new(RwLock::new(HeapRb::new(capacity))),
+            writers: Vec::new(),
+        }
+    }
+
+    pub fn with_writers(&mut self, writers: Vec<Arc<dyn AuditWriter>>) {
+        self.writers = writers
+    }
+
+    pub fn global() -> &'static AuditManager {
+        AUDIT_MANAGER.get().expect("AuditManager not initialized")
+    }
+
+    pub async fn record(&self, record: AuditRecord) -> Result<(), CoreError> {
+        let mut buffer = self.buffer.write().await;
+        buffer.push_overwrite(record.clone());
+
+        for writer in &self.writers {
+            writer.write(&record).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_recent(&self, count: usize) -> Vec<AuditRecord> {
+        let buffer = self.buffer.read().await;
+        buffer.iter().rev().take(count).cloned().collect()
+    }
 }

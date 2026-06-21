@@ -1,0 +1,26 @@
+use async_trait::async_trait;
+use crate::handler::{Ack, EHandler};
+use crate::message::EMessage;
+use crate::metrics::node::NodeMetrics;
+use crate::metrics::node_store::MetricsStore;
+use crate::shutdown::messages::ShutdownCommand;
+
+pub struct  MetricsHandler {}
+
+#[async_trait]
+impl EHandler for MetricsHandler {
+    async fn handle(&self, msg: &EMessage) -> Ack {
+        let info: NodeMetrics =
+            match serde_json::from_slice::<NodeMetrics>(&msg.payload.0.as_slice()) {
+                Ok(msg) => msg,
+                Err(e) => {
+                    eprintln!("[METRICS]Failed to deserialize NodeMetrics: {}", e);
+                    return Ack::Ack;
+                }
+            };
+
+        MetricsStore::global().update(info.clone()).await;
+
+        Ack::Ack
+    }
+}

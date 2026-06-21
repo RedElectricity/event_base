@@ -1,11 +1,12 @@
-use crate::audit::AuditWriter;
+use crate::audit::AuditManager;
 use crate::constant::{
     SYSTEM_TOPIC_AUDIT, SYSTEM_TOPIC_SHUTDOWN, SYSTEM_TOPIC_SHUTDOWN_ACK, SYSTEM_TOPIC_TRACE,
     SYSTEM_TOPIC_WAL_SYNC, SYSTEM_TOPIC_WORKER_DISCOVERY, SYSTEM_TOPIC_WORKER_HEARTBEAT,
 };
 use crate::error::CoreError;
+use crate::metrics::node::NodeCollector;
 use crate::shutdown::ShutdownSender;
-use crate::system_handlers::audit::SystemAuditHandler;
+use crate::system_handlers::audit::AuditHandler;
 use crate::system_handlers::shutdown::ShutdownAckHandler;
 use crate::system_handlers::shutdown::ShutdownHandler;
 use crate::system_handlers::trace::{SystemTraceHandler, TraceCollector};
@@ -17,7 +18,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct SystemHandlerBuilder {
-    audit_writers: Vec<Arc<dyn AuditWriter>>,
     trace_collectors: Vec<Arc<dyn TraceCollector>>,
     wal: Arc<Mutex<dyn Wal>>,
     shutdown_handler: ShutdownSender,
@@ -27,17 +27,11 @@ pub struct SystemHandlerBuilder {
 impl SystemHandlerBuilder {
     pub fn new(wal: Arc<Mutex<dyn Wal>>, shutdown_sender: ShutdownSender, is_host: bool) -> Self {
         Self {
-            audit_writers: Vec::new(),
             trace_collectors: Vec::new(),
             wal,
             shutdown_handler: shutdown_sender,
             is_host,
         }
-    }
-
-    pub fn with_audit_writer(mut self, writer: Arc<dyn AuditWriter>) -> Self {
-        self.audit_writers.push(writer);
-        self
     }
 
     pub fn with_trace_collector(mut self, collector: Arc<dyn TraceCollector>) -> Self {
@@ -57,13 +51,18 @@ impl SystemHandlerBuilder {
                     }),
                 )
                 .await?;
+
+            tokio::spawn(async move {
+                let collector = NodeCollector;
+                collector.start().await;
+            });
+
             return Ok(());
         };
 
-        if !self.audit_writers.is_empty() {
-            let handler = SystemAuditHandler::new(self.audit_writers.clone());
+        if !AuditManager::global().writers.is_empty() {
             router
-                .register(SYSTEM_TOPIC_AUDIT, Arc::new(handler))
+                .register(SYSTEM_TOPIC_AUDIT, Arc::new(AuditHandler {}))
                 .await?;
         }
 
@@ -107,6 +106,11 @@ impl SystemHandlerBuilder {
         router
             .register(SYSTEM_TOPIC_SHUTDOWN_ACK, Arc::new(ShutdownAckHandler {}))
             .await?;
+
+        tokio::spawn(async move {
+            let collector = NodeCollector;
+            collector.start().await;
+        });
 
         Ok(())
     }
