@@ -3,7 +3,8 @@ use std::time::SystemTime;
 use tokio::sync::Mutex;
 use crate::audit::AuditRecord;
 use crate::metrics::aggregator::MetricsAggregator;
-use crate::metrics::node::NodeCollector;
+use crate::metrics::node::{NodeCollector, NodeMetrics};
+use crate::metrics::node_store::MetricsStore;
 
 static METRICS_MANAGER: OnceLock<Arc<MetricsManager>> = OnceLock::new();
 
@@ -25,10 +26,10 @@ impl MetricsManager {
 
     pub async fn snapshot(&self) -> MetricsSnapshot {
         let business = self.aggregator.lock().await.snapshot();
-        let node = todo!();
+        let nodes = MetricsStore::global().get_all_nodes().await;
         MetricsSnapshot {
             business: business.clone(),
-            node,
+            nodes,
             timestamp: SystemTime::now(),
         }
     }
@@ -36,6 +37,6 @@ impl MetricsManager {
 
 pub struct MetricsSnapshot {
     business: MetricsAggregator,
-    node: Arc<NodeCollector>,
+    nodes: Vec<NodeMetrics>,
     timestamp: SystemTime,
 }
