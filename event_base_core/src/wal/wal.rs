@@ -18,7 +18,7 @@ pub trait Wal: Send + Sync {
     async fn flush(&mut self) -> Result<(), CoreError>;
 
     async fn schedule(&self, record: WalRecord) -> Result<(), CoreError>;
-    async fn fetch_ready(&self, now: SystemTime) -> Result<Vec<WalRecord>, CoreError>;
+    async fn fetch_ready(&self) -> Result<Vec<WalRecord>, CoreError>;
     async fn remove_scheduled(&self, msg_id: &str) -> Result<(), CoreError>;
 }
 

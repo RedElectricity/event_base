@@ -1,16 +1,14 @@
 use async_trait::async_trait;
+use event_base_core::error::queue::QueueError;
 use event_base_core::error::CoreError;
 use event_base_core::message::EMessage;
 use event_base_core::queues::consumer_factory::ConsumerFactory;
 use event_base_core::queues::factory::QueueFactory;
 use event_base_core::queues::{EConsumer, EProducer};
-use event_base_core::worker_registry::{WorkerInfo, WorkerRegistry};
-use flume::{Receiver, Sender, bounded, unbounded};
-use std::collections::HashMap;
-use std::sync::Arc;
+use flume::{bounded, unbounded, Receiver, Sender};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct MemoryProducer {
@@ -45,11 +43,23 @@ pub fn memory_queue(capacity: usize) -> (MemoryProducer, MemoryConsumer) {
 #[async_trait]
 impl EProducer for MemoryProducer {
     async fn send(&self, e: EMessage) -> Result<(), CoreError> {
-        self.len.fetch_add(1, Ordering::Relaxed);
         if let Err(e) = self.tx.send(e) {
-            self.len.fetch_sub(1, Ordering::Release);
-            return Err(CoreError::QueueSendError(e.to_string()));
+            return Err(CoreError::from(QueueError::Send(e.to_string())));
         }
+        Ok(())
+    }
+
+    fn try_send(&self, msg: EMessage) -> Result<(), CoreError> {
+        if let Err(_e) = self.tx.try_send(msg) {
+            return Err(CoreError::from(QueueError::Full));
+        }
+        Ok(())
+    }
+
+    async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
+        let _ = tokio::time::timeout(timeout, self.send(msg))
+            .await
+            .map_err(|_| QueueError::Timeout);
         Ok(())
     }
 }

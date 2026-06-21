@@ -5,7 +5,7 @@ use crate::error::CoreError;
 use crate::error::serialize::SerializeError::SerializeError;
 use crate::handler::Ack::{Ack, Dead, NoAck};
 use crate::message::DeliveryMode::{Repeated, Standard};
-use crate::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
+use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::middleware::Pipeline;
 use crate::queues::{EConsumer, EProducer};
 use crate::shutdown::ShutdownReceiver;
@@ -13,7 +13,6 @@ use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
 use crate::topic::TopicRouter;
 use crate::wal::sync::WalClient;
 use crate::worker::WorkerStatus::Working;
-use serde::Serialize;
 use std::option::Option;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -79,7 +78,7 @@ impl Worker {
                     break;
                 }
                 msg = consumer.receive() => {
-                    self.set_status(WorkerStatus::Working).await;
+                    self.set_status(Working).await;
                     let msg = msg.unwrap();
                     self.process_msg(msg).await;
                     self.set_status(WorkerStatus::Idle).await;
@@ -99,7 +98,7 @@ impl Worker {
                 ))
                 .await
             {
-                tracing::error!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
+                error!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
             }
         }
 
@@ -200,12 +199,12 @@ impl Worker {
                     if let Some(delay) = retry_after {
                         msg.deliver_at = SystemTime::now().checked_add(delay);
                         TopicRouter::global()
-                            .send(&msg.clone().topic.0, msg.clone())
+                            .send(&msg.clone().topic.0, msg.clone(), None, None)
                             .await
                             .expect("Fail to requeue the NoAck msg");
                     } else {
                         if let Err(e) = self.producer.send(msg.clone()).await {
-                            tracing::error!("Failed to requeue message {}: {}", &msg.id, e);
+                            error!("Failed to requeue message {}: {}", &msg.id, e);
                         }
                     }
                 }
@@ -224,7 +223,7 @@ impl Worker {
                     .send_to_dead_letter(msg.clone(), DeadReason::Explicit, process_time)
                     .await
                 {
-                    tracing::error!("Failed to send to dead letter: {}", e);
+                    error!("Failed to send to dead letter: {}", e);
                 }
             }
         }
@@ -264,7 +263,7 @@ impl Worker {
             Standard,
         );
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_AUDIT, audit_msg)
+            .send(SYSTEM_TOPIC_AUDIT, audit_msg, None, None)
             .await?;
 
         Ok(())
@@ -290,7 +289,7 @@ impl Worker {
             .expect("Fail to push WAL msg when mark the msg to dead letter");
 
         TopicRouter::global()
-            .send(&dead_letter_topic_name, msg.clone())
+            .send(&dead_letter_topic_name, msg.clone(), None, None)
             .await?;
 
         if self.topic != SYSTEM_TOPIC_AUDIT {
@@ -343,7 +342,7 @@ impl Worker {
         );
 
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_AUDIT, ack_msg)
+            .send(SYSTEM_TOPIC_AUDIT, ack_msg, None, None)
             .await
             .expect("[SHUTDOWN ACK] Fail to send shutdown ack message");
     }

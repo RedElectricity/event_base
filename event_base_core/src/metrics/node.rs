@@ -1,11 +1,11 @@
-use std::time::{Duration, SystemTime};
-use serde::{Deserialize, Serialize};
-use crate::topic::TopicRouter;
-use sysinfo::System;
 use crate::constant::SYSTEM_TOPIC_METRICS;
-use crate::{get_node_name, message};
-use crate::message::{EMessage, MessageTopic};
 use crate::message::DeliveryMode::Standard;
+use crate::message::{EMessage, MessageTopic};
+use crate::topic::TopicRouter;
+use crate::{get_node_name, message};
+use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime};
+use sysinfo::System;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct NodeMetrics {
@@ -13,7 +13,7 @@ pub struct NodeMetrics {
     pub cpu_percent: Vec<f32>,
     pub memory_percent: f32,
     pub node_worker_count: usize,
-    pub update_time: SystemTime
+    pub update_time: SystemTime,
 }
 
 #[derive(Clone)]
@@ -26,12 +26,12 @@ impl NodeCollector {
             let msg = EMessage::new(
                 MessageTopic(SYSTEM_TOPIC_METRICS.parse().unwrap()),
                 message::MessagePayload(serde_json::to_vec(&metrics).unwrap()),
-                Standard
+                Standard,
             );
-            TopicRouter::global().send(
-                SYSTEM_TOPIC_METRICS,
-                msg
-            ).await.expect("[NODE METRICS COLLECTOR]Fail to send node message");
+            TopicRouter::global()
+                .send(SYSTEM_TOPIC_METRICS, msg, None, None)
+                .await
+                .expect("[NODE METRICS COLLECTOR]Fail to send node message");
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     }
@@ -57,7 +57,7 @@ impl NodeCollector {
             cpu_percent: cpu_usage,
             memory_percent: memory_used_percent,
             node_worker_count,
-            update_time: SystemTime::now()
+            update_time: SystemTime::now(),
         }
     }
 }

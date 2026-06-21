@@ -14,9 +14,8 @@ impl EHandler for AuditHandler {
                 return Ack::Ack;
             }
         };
-        
-        let audit_mgr = AuditManager::global();
 
+        let audit_mgr = AuditManager::global();
 
         if let Err(e) = audit_mgr.record(record.clone()).await {
             eprintln!(
@@ -24,7 +23,7 @@ impl EHandler for AuditHandler {
                 record.message_id, e
             );
         }
-        
+
         Ack::Ack
     }
 }

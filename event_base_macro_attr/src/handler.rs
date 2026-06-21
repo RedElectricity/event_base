@@ -1,9 +1,8 @@
-use darling::FromMeta;
 use darling::ast::NestedMeta;
+use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::punctuated::Punctuated;
-use syn::{Expr, ItemFn, Meta, Token, parse};
+use syn::{parse, Expr, ItemFn};
 
 pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error> {
     let input_fn: ItemFn = parse(input)?;
@@ -14,7 +13,6 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
     let workers = args.workers;
     let timeout = args.timeout;
     let middleware = args.middleware;
-    // TODO: Left for shutdown
 
     let entry_ident = syn::Ident::new(&format!("_ENTRY_{}", fn_name), fn_name.span());
     let register_ident = syn::Ident::new(&format!("_register_{}", fn_name), fn_name.span());
@@ -119,7 +117,7 @@ fn default_workers() -> usize {
 }
 
 impl HandlerArgs {
-    pub fn from_attr_args(args: proc_macro::TokenStream) -> darling::Result<Self> {
+    pub fn from_attr_args(args: TokenStream) -> darling::Result<Self> {
         let attr_args = match NestedMeta::parse_meta_list(args.into()) {
             Ok(v) => v,
             Err(e) => {

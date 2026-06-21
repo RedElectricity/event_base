@@ -1,8 +1,6 @@
-use crate::audit::AuditWriter;
 use crate::error::CoreError;
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
-use crate::system_handlers::audit::AuditHandler;
 use crate::trace::TraceRecord;
 use async_trait::async_trait;
 use std::sync::Arc;

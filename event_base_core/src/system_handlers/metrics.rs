@@ -1,11 +1,10 @@
-use async_trait::async_trait;
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::metrics::node::NodeMetrics;
 use crate::metrics::node_store::MetricsStore;
-use crate::shutdown::messages::ShutdownCommand;
+use async_trait::async_trait;
 
-pub struct  MetricsHandler {}
+pub struct MetricsHandler {}
 
 #[async_trait]
 impl EHandler for MetricsHandler {

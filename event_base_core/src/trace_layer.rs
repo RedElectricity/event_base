@@ -1,5 +1,3 @@
-// event_base_tracing/src/layer.rs
-
 use crate::constant::SYSTEM_TOPIC_TRACE;
 use crate::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
 use crate::queues::EProducer;
@@ -10,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tracing::span::{Attributes, Id};
-use tracing_core::{Metadata, Subscriber};
+use tracing_core::Subscriber;
 use tracing_serde::AsSerde;
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
@@ -73,14 +71,13 @@ where
         extensions.insert(record);
     }
 
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        // 可选：捕获独立 Event（不在 Span 内）
-        // 类似逻辑，发送到 _system.trace
-    }
+    // fn on_event(
+    //     &self,
+    //     event: &tracing::Event<'_>,
+    //     _ctx: tracing_subscriber::layer::Context<'_, S>,
+    // ) {
+    //
+    // }
 
     fn on_close(&self, id: Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let span = ctx.span(&id).unwrap();
@@ -98,7 +95,7 @@ where
             );
             tokio::spawn(async move {
                 TopicRouter::global()
-                    .send(SYSTEM_TOPIC_TRACE, msg)
+                    .send(SYSTEM_TOPIC_TRACE, msg, None, None)
                     .await
                     .expect("Fail to send tracing msg"); // 失败静默忽略
             });

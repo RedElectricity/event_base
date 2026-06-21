@@ -1,4 +1,3 @@
-use crate::error::CoreError;
 use crate::error::serialize::SerializeError;
 use crate::wal::wal::WalRecord;
 use bincode::config;

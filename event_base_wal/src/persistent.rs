@@ -124,7 +124,7 @@ impl Wal for PersistentWal {
         Ok(())
     }
 
-    async fn fetch_ready(&self, now: SystemTime) -> Result<Vec<WalRecord>, CoreError> {
+    async fn fetch_ready(&self) -> Result<Vec<WalRecord>, CoreError> {
         let mut delays = self.delays.lock().unwrap();
         let mut ready = Vec::new();
 

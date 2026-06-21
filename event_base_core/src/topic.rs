@@ -96,7 +96,10 @@ impl TopicRouter {
             let mut msg = msg;
             msg.deliver_at = None;
 
-            match self.send(&msg.clone().topic.0, msg.clone()).await {
+            match self
+                .send(&msg.clone().topic.0, msg.clone(), None, None)
+                .await
+            {
                 Ok(_) => summary.recovered += 1,
                 Err(e) => {
                     summary.errors.push((msg.id, e));
@@ -127,7 +130,13 @@ impl TopicRouter {
         Ok(())
     }
 
-    pub async fn send(&self, topic: &str, mut msg: EMessage) -> Result<(), CoreError> {
+    pub async fn send(
+        &self,
+        topic: &str,
+        mut msg: EMessage,
+        try_send: Option<bool>,
+        timeout: Option<Duration>,
+    ) -> Result<(), CoreError> {
         if let Some(wal) = &self.wal {
             let record = WalRecord::from_msg(msg.clone());
             let mut wal = wal.lock().await;
@@ -154,7 +163,13 @@ impl TopicRouter {
                     let (worker, _) = workers.get(worker_index).unwrap();
                     let mut copy = msg.clone();
                     copy.id = format!("{}-{}", msg.id, worker.clone().name);
-                    worker.producer.send(copy).await?;
+                    if try_send.unwrap_or(false) {
+                        worker.producer.try_send(copy.clone())?;
+                    } else if let Some(to) = timeout {
+                        worker.producer.send_timeout(copy.clone(), to).await?;
+                    } else {
+                        worker.producer.send(copy).await?;
+                    }
                 }
             }
             return Ok(());
@@ -165,19 +180,25 @@ impl TopicRouter {
             .get_producer(topic)
             .await
             .ok_or_else(|| TopicError::NotFound(topic.to_string()))?;
-        producer.send(msg).await
+        if try_send.unwrap_or(false) {
+            producer.try_send(msg.clone())?;
+        } else if let Some(to) = timeout {
+            producer.send_timeout(msg.clone(), to).await?;
+        } else {
+            producer.send(msg).await?;
+        }
+        Ok(())
     }
 
     pub async fn run_delay_scheduler(wal: Arc<dyn Wal>, router: Arc<TopicRouter>) {
         loop {
-            let now = SystemTime::now();
-            match wal.fetch_ready(now).await {
+            match wal.fetch_ready().await {
                 Ok(ready_records) => {
                     for record in ready_records {
                         // 投递前清除 deliver_at（避免再次延迟）
                         let mut msg = record.message;
                         msg.deliver_at = None;
-                        if let Err(e) = router.send(&msg.clone().topic.0, msg).await {
+                        if let Err(e) = router.send(&msg.clone().topic.0, msg, None, None).await {
                             tracing::error!("Failed to deliver delayed message: {}", e);
                         }
                     }

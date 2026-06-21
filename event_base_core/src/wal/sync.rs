@@ -59,7 +59,7 @@ impl WalClient {
             Standard,
         );
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_WAL_SYNC, msg)
+            .send(SYSTEM_TOPIC_WAL_SYNC, msg, None, None)
             .await?;
         Ok(())
     }

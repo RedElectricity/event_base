@@ -1,10 +1,10 @@
-use std::sync::{Arc, OnceLock};
-use std::time::SystemTime;
-use tokio::sync::Mutex;
 use crate::audit::AuditRecord;
 use crate::metrics::aggregator::MetricsAggregator;
 use crate::metrics::node::{NodeCollector, NodeMetrics};
 use crate::metrics::node_store::MetricsStore;
+use std::sync::{Arc, OnceLock};
+use std::time::SystemTime;
+use tokio::sync::Mutex;
 
 static METRICS_MANAGER: OnceLock<Arc<MetricsManager>> = OnceLock::new();
 
@@ -17,7 +17,9 @@ pub struct MetricsManager {
 
 impl MetricsManager {
     pub fn global() -> &'static MetricsManager {
-        METRICS_MANAGER.get().expect("MetricsManager not initialized")
+        METRICS_MANAGER
+            .get()
+            .expect("MetricsManager not initialized")
     }
 
     pub async fn feed_audit(&self, record: &AuditRecord) {

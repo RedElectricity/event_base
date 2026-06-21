@@ -1,6 +1,6 @@
+use crate::audit::{AuditEventType, AuditRecord};
 use std::collections::HashMap;
 use std::time::Duration;
-use crate::audit::{AuditEventType, AuditRecord};
 
 #[derive(Debug, Clone)]
 pub struct MetricsAggregator {
@@ -10,7 +10,7 @@ pub struct MetricsAggregator {
     failed: HashMap<String, u64>,
     retried: HashMap<String, u64>,
     dead: HashMap<String, u64>,
-    latency_sum: HashMap<String, (u64, Duration)>,  // (count, sum_duration)
+    latency_sum: HashMap<String, (u64, Duration)>, // (count, sum_duration)
 }
 
 impl MetricsAggregator {
