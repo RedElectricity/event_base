@@ -63,10 +63,6 @@ impl EMessage {
             to_worker,
         }
     }
-
-    fn increment_attempts(&mut self) {
-        self.attempts += 1;
-    }
 }
 
 impl Default for EMessage {
@@ -99,11 +95,10 @@ mod tests {
     fn message_creation() {
         let new_topic = MessageTopic("topic".to_owned());
         let new_payload = MessagePayload("text".as_bytes().to_vec());
-        let mut msg = EMessage::new(new_topic.clone(), new_payload, DeliveryMode::Standard, None);
+        let msg = EMessage::new(new_topic.clone(), new_payload, DeliveryMode::Standard, None);
         assert_eq!(msg.topic, new_topic.clone());
         assert_eq!(msg.attempts, 0);
 
-        msg.increment_attempts();
         assert_eq!(msg.attempts, 1);
     }
 }

@@ -8,5 +8,5 @@ description = "An Event Driven Message Queue Framework"
 [dependencies]
 
 [workspace]
-members = ["event_base_core", "event_base_wal", "event_base_test", "event_base_queue", "event_base_middleware", "event_base_audit", "event_base_macro_attr", "event_base_macro_func"]
+members = ["event_base_core", "event_base_wal", "event_base_test", "event_base_queue", "event_base_middleware", "event_base_audit", "event_base_macro_attr", "event_base_macro_func", "event_base_grpc"]
 resolver = "3"

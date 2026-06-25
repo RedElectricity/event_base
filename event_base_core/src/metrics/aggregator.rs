@@ -4,13 +4,11 @@ use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct MetricsAggregator {
-    // 只保留当前值，不存历史
-    enqueued: HashMap<String, u64>,
-    completed: HashMap<String, u64>,
-    failed: HashMap<String, u64>,
-    retried: HashMap<String, u64>,
-    dead: HashMap<String, u64>,
-    latency_sum: HashMap<String, (u64, Duration)>, // (count, sum_duration)
+    pub enqueued: HashMap<String, u64>,
+    pub completed: HashMap<String, u64>,
+    pub failed: HashMap<String, u64>,
+    pub retried: HashMap<String, u64>,
+    pub latency_sum: HashMap<String, (u64, Duration)>, // (count, sum_duration)
 }
 
 impl MetricsAggregator {

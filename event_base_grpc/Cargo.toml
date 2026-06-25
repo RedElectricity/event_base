@@ -1,0 +1,14 @@
+[package]
+name = "event_base_grpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+prost = "0.14.4"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+event_base_core = {path = "../event_base_core"}
+serde_json = "1.0.150"
+
+[build-dependencies]
+tonic-prost-build = "0.14.6"

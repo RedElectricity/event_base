@@ -103,13 +103,8 @@ pub struct HandlerArgs {
     #[darling(default)]
     pub timeout: Option<u64>,
 
-    // 直接用 Expr 存储，不解析内容
     #[darling(default)]
     pub middleware: Option<Expr>,
-
-    // shutdown 也是 Expr，用户传什么就是什么
-    #[darling(default)]
-    pub shutdown: Option<Expr>,
 }
 
 fn default_workers() -> usize {

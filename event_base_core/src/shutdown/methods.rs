@@ -1,6 +1,5 @@
 use crate::error::CoreError;
 use crate::queues::consumer_router::ConsumerRouter;
-use crate::topic::TopicRouter;
 use crate::worker::WorkerStatus::Idle;
 use std::time::Duration;
 use tokio::sync::broadcast;

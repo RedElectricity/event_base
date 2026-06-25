@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package event_base;
+
+message Empty {}
+
+enum NodeType {
+  NODE_TYPE_UNKNOWN = 0;
+  NODE_TYPE_WORKER = 1;
+  NODE_TYPE_MASTER = 2;
+}
+
+message ListNodeMetricsRequest {
+  string node_name = 1;
+}
+
+message NodeMetrics {
+  string node_name = 1;
+  NodeType node_type = 2;
+  repeated float cpu_percent = 3;
+  float memory_percent = 4;
+  uint64 node_worker_count = 5;
+  uint64 update_time = 6;
+}
+
+message WorkerInfo {
+  string worker_name = 1;
+  string topic = 2;
+  uint64 last_heartbeat = 3;
+}
+
+message ListWorkersRequest {
+  string topic = 1;
+}
+
+message ListWorkersResponse {
+  repeated WorkerInfo workers = 1;
+  uint32 total = 2;
+}
+
+message TopicInfo {
+  map<string, uint64> enqueued = 1;
+  map<string, uint64> completed = 2;
+  map<string, uint64> failed = 3;
+  map<string, uint64> retried = 4;
+
+  map<string, LatencyStats> latency_sum = 5;
+}
+
+message LatencyStats {
+  uint64 count = 1;
+  uint64 sum_duration_nanos = 2;
+}
+
+message ListTopicsResponse {
+  repeated string topics = 1;
+  uint32 total = 2;
+}
+
+message TopicStatsResponse {
+  TopicInfo info = 1;
+}
+
+message ShutdownRequest {
+  oneof strategy {
+    TwoStage two_stage = 1;
+    Graceful graceful = 2;
+    Force force = 3;
+    Timeout timeout = 4;
+    StateBasedIdle state_based_idle = 5;
+    Batched batched = 6;
+  }
+
+  message TwoStage {
+    uint64 poll_interval_ms = 1;
+    uint64 force_timeout_secs = 2;
+  }
+
+  message Graceful {
+    string worker_name = 1;
+    uint64 poll_interval_ms = 2;
+  }
+
+  message Force { }
+
+  message Timeout {
+    uint64 total_timeout_secs = 1;
+  }
+
+  message StateBasedIdle { }
+
+  message Batched {
+    uint64 batch_size = 1;
+    uint64 interval_ms = 2;
+  }
+}
+
+
+message ShutdownResponse {
+  bool success = 1;
+}
+
+message RespCheckResponse {
+  bool ready = 1;
+  uint64 timestamp = 2;
+}
+
+service EventBase {
+  rpc GetNodeMetrics(ListNodeMetricsRequest) returns (NodeMetrics);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  rpc ListTopics(Empty) returns (ListTopicsResponse);
+  rpc GetTopicStats(Empty) returns (TopicStatsResponse);
+
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+  rpc RespCheck(Empty) returns (RespCheckResponse);
+}

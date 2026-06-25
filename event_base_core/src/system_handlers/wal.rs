@@ -21,7 +21,7 @@ impl EHandler for WalSyncHandler {
         let sync: WalSyncMessage = match serde_json::from_slice(&msg.payload.0) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[SYSTEM] Failed to deserialize WalSyncMessage: {}", e);
+                eprintln!("[SYSTEM] Failed to deserialize Wal Sync Message: {}", e);
                 return Ack::Ack;
             }
         };

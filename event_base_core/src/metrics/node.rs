@@ -3,7 +3,7 @@ use crate::message::DeliveryMode::Standard;
 use crate::message::{EMessage, MessageTopic};
 use crate::queues::consumer_router::ConsumerRouter;
 use crate::topic::TopicRouter;
-use crate::{get_node_name, message};
+use crate::{NodeType, get_node_name, get_node_type, message};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 use sysinfo::System;
@@ -11,6 +11,7 @@ use sysinfo::System;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct NodeMetrics {
     pub node_name: String,
+    pub node_type: NodeType,
     pub cpu_percent: Vec<f32>,
     pub memory_percent: f32,
     pub node_worker_count: usize,
@@ -53,6 +54,7 @@ impl NodeCollector {
 
         NodeMetrics {
             node_name: get_node_name(),
+            node_type: *get_node_type(),
             cpu_percent: cpu_usage,
             memory_percent: memory_used_percent,
             node_worker_count,

@@ -26,8 +26,8 @@ static NODE_TYPE: OnceLock<Arc<NodeType>> = OnceLock::new();
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum NodeType {
-    Host,
-    Worker,
+    Host = 0,
+    Worker = 1,
 }
 
 pub fn set_node_name(node_name: String) {

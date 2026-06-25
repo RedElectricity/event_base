@@ -63,7 +63,7 @@ pub struct ShutdownAckHandler;
 impl EHandler for ShutdownAckHandler {
     async fn handle(&self, msg: &EMessage) -> Ack {
         let ack: ShutdownAck = serde_json::from_slice(&msg.payload.0)
-            .map_err(|e| tracing::error!("[SHUTDOWN ACK]Failed to deserialize ShutdownAck: {}", e))
+            .map_err(|e| tracing::error!("[SHUTDOWN ACK]Failed to deserialize Shutdown Ack: {}", e))
             .unwrap();
 
         // 从 WR 删除 Worker

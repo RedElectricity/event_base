@@ -1,12 +1,11 @@
 use crate::error::CoreError;
-use crate::error::topic::TopicError;
 use crate::message::DeliveryMode::Broadcast;
 use crate::message::{EMessage, MessageTopic};
 use crate::queues::EProducer;
 use crate::wal::wal::{Wal, WalRecord};
 use crate::worker_registry::WorkerRegistry;
 use crate::{NodeType, get_node_type};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
@@ -127,7 +126,6 @@ impl TopicRouter {
                     "Unsupported node type, send broadcast message must host".to_string(),
                 ));
             }
-            let map = self.inner.read().await;
             let workers = WorkerRegistry::global().get_workers(topic).await?;
             for worker_index in workers {
                 let mut copy = msg.clone();
@@ -182,7 +180,7 @@ impl TopicRouter {
     }
 
     pub async fn register_topic(&self, topic: &str) {
-        let mut topics = self.list_topics().await;
+        let mut topics = self.inner.write().await;
         topics.push(topic.to_string());
     }
 }

@@ -48,7 +48,7 @@ impl Pipeline {
     }
 
     pub async fn run(&self, msg: &mut EMessage) -> Ack {
-        let mut next = Next {
+        let next = Next {
             next: &self.middlewares,
             index: 0,
             handler: &*self.handler,
