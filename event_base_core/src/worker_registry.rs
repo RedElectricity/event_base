@@ -1,13 +1,15 @@
 use crate::error::CoreError;
+use crate::wal::wal::Wal;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 static WORKER_REGISTRY: OnceLock<Arc<WorkerRegistry>> = OnceLock::new();
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct WorkerInfo {
     pub worker_name: String,
     pub topic: String,
@@ -29,12 +31,21 @@ pub struct WorkerDiscoveryMessage {
 
 pub struct WorkerRegistry {
     workers: RwLock<HashMap<String, WorkerInfo>>,
+    wal: Option<Arc<Mutex<dyn Wal>>>,
 }
 
 impl WorkerRegistry {
-    pub fn init() -> Result<(), CoreError> {
+    pub async fn init(wal: Option<Arc<Mutex<dyn Wal>>>) -> Result<(), CoreError> {
+        let wr = wal
+            .clone()
+            .unwrap()
+            .lock()
+            .await
+            .load_worker_registry()
+            .await?;
         let registry = Arc::new(WorkerRegistry {
-            workers: RwLock::new(HashMap::new()),
+            wal,
+            workers: RwLock::from(wr),
         });
         WORKER_REGISTRY
             .set(registry)
@@ -52,12 +63,14 @@ impl WorkerRegistry {
     pub async fn register(&self, info: WorkerInfo) -> Result<(), CoreError> {
         let mut workers = self.workers.write().await;
         workers.insert(info.clone().worker_name, info);
+        self.save_worker_registry().await?;
         Ok(())
     }
 
     pub async fn unregister(&self, worker_id: &str) -> Result<(), CoreError> {
         let mut workers = self.workers.write().await;
         workers.remove(worker_id);
+        self.save_worker_registry().await?;
         Ok(())
     }
 
@@ -105,5 +118,15 @@ impl WorkerRegistry {
         }
 
         Ok(stable)
+    }
+    async fn save_worker_registry(&self) -> Result<(), CoreError> {
+        let workers = self.workers.read().await;
+        self.wal
+            .clone()
+            .unwrap()
+            .lock()
+            .await
+            .save_worker_registry(workers.clone())
+            .await
     }
 }

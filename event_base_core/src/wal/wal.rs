@@ -1,9 +1,11 @@
 use crate::dead_letter::DeadReason;
 use crate::error::CoreError;
 use crate::message::EMessage;
+use crate::worker_registry::WorkerInfo;
 use async_trait::async_trait;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 #[async_trait]
@@ -16,10 +18,14 @@ pub trait Wal: Send + Sync {
     ) -> Result<(), CoreError>;
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError>;
     async fn flush(&mut self) -> Result<(), CoreError>;
-
     async fn schedule(&self, record: WalRecord) -> Result<(), CoreError>;
     async fn fetch_ready(&self) -> Result<Vec<WalRecord>, CoreError>;
     async fn remove_scheduled(&self, msg_id: &str) -> Result<(), CoreError>;
+    async fn save_worker_registry(
+        &self,
+        registry: HashMap<String, WorkerInfo>,
+    ) -> Result<(), CoreError>;
+    async fn load_worker_registry(&self) -> Result<HashMap<String, WorkerInfo>, CoreError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]

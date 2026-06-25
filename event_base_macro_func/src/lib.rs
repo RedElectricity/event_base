@@ -7,11 +7,14 @@ macro_rules! send_msg {
     }};
 }
 
+// TODO: Refactor this
 #[macro_export]
-macro_rules! start_queue_system {
-    ($factory:expr, $wal:expr, $system_builder:expr) => {{
+macro_rules! start_system {
+    ($factory:expr, $wal:expr, $system_builder:expr, $node_type: expr) => {{
         use event_base_core::shutdown::shutdown_channel;
         use event_base_core::topic::TopicRouter;
+
+        event_base_core::set_node_type($node_type)
 
         let factory = std::sync::Arc::new($factory);
         let wal = $wal.map(std::sync::Arc::new);
@@ -25,6 +28,19 @@ macro_rules! start_queue_system {
 
         if let Some(wal) = wal {
             let router = TopicRouter::global();
+
+            let topics_discovery_msg = EMessage::new(
+            MessageTopic(SYSTEM_TOPIC_WORKER_DISCOVERY.parse().unwrap()),
+            MessagePayload(serde_json::to_vec(&TopicDiscoveryMessage {
+                has_topics: router.list_topics().await
+            }).unwrap()),
+            Standard,
+            None,
+        );
+
+            router.send(SYSTEM_TOPIC_WORKER_DISCOVERY, topics_discovery_msg, None, None).await
+            .expect("[START UP] Failed to send topic discovery message");
+
             tokio::spawn(event_base_core::delay::run_scheduler(wal, router));
         }
 

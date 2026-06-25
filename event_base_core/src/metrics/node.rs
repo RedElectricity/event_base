@@ -1,6 +1,7 @@
 use crate::constant::SYSTEM_TOPIC_METRICS;
 use crate::message::DeliveryMode::Standard;
 use crate::message::{EMessage, MessageTopic};
+use crate::queues::consumer_router::ConsumerRouter;
 use crate::topic::TopicRouter;
 use crate::{get_node_name, message};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ impl NodeCollector {
                 MessageTopic(SYSTEM_TOPIC_METRICS.parse().unwrap()),
                 message::MessagePayload(serde_json::to_vec(&metrics).unwrap()),
                 Standard,
+                None,
             );
             TopicRouter::global()
                 .send(SYSTEM_TOPIC_METRICS, msg, None, None)
@@ -38,8 +40,6 @@ impl NodeCollector {
 
     async fn collect(&self) -> NodeMetrics {
         let mut sys = System::new_all();
-
-        // First we update all information of our `System` struct.
         sys.refresh_all();
 
         let mut cpu_usage: Vec<f32> = vec![];
@@ -49,8 +49,7 @@ impl NodeCollector {
 
         let memory_used_percent = (sys.used_memory() / sys.total_memory()) as f32;
 
-        // Worker 数（从 WR）
-        let node_worker_count = TopicRouter::global().get_all_workers().await.len();
+        let node_worker_count = ConsumerRouter::global().get_all_workers().await.len();
 
         NodeMetrics {
             node_name: get_node_name(),

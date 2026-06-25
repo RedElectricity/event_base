@@ -193,6 +193,7 @@ dependencies = [
  "async-trait",
  "bincode",
  "linkme",
+ "log",
  "ringbuf",
  "serde",
  "serde_json",
@@ -236,6 +237,7 @@ dependencies = [
  "event_base_core",
  "flume",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

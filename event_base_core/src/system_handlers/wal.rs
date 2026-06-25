@@ -35,6 +35,8 @@ impl EHandler for WalSyncHandler {
             );
         }
 
+        wal.flush().await.unwrap();
+
         Ack::Ack
     }
 }

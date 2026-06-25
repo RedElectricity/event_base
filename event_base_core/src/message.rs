@@ -13,6 +13,7 @@ pub struct EMessage {
     pub delivery_mode: DeliveryMode,
     pub consumed_count: u32,
     pub deliver_at: Option<SystemTime>,
+    pub to_worker: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
@@ -38,7 +39,12 @@ pub struct MessageMetadata {
 }
 
 impl EMessage {
-    pub fn new(topic: MessageTopic, payload: MessagePayload, delivery_mode: DeliveryMode) -> Self {
+    pub fn new(
+        topic: MessageTopic,
+        payload: MessagePayload,
+        delivery_mode: DeliveryMode,
+        to_worker: Option<String>,
+    ) -> Self {
         EMessage {
             id: Uuid::new_v4().to_string(),
             topic,
@@ -54,6 +60,7 @@ impl EMessage {
             delivery_mode,
             consumed_count: 0,
             deliver_at: None,
+            to_worker,
         }
     }
 
@@ -79,6 +86,7 @@ impl Default for EMessage {
             delivery_mode: DeliveryMode::Standard,
             consumed_count: 0,
             deliver_at: None,
+            to_worker: None,
         }
     }
 }
@@ -91,7 +99,7 @@ mod tests {
     fn message_creation() {
         let new_topic = MessageTopic("topic".to_owned());
         let new_payload = MessagePayload("text".as_bytes().to_vec());
-        let mut msg = EMessage::new(new_topic.clone(), new_payload, DeliveryMode::Standard);
+        let mut msg = EMessage::new(new_topic.clone(), new_payload, DeliveryMode::Standard, None);
         assert_eq!(msg.topic, new_topic.clone());
         assert_eq!(msg.attempts, 0);
 

@@ -31,7 +31,7 @@ pub struct Worker {
     pub shutdown_receiver: Arc<Mutex<ShutdownReceiver>>,
     pub shutdown_check_interval: Duration,
     pub shutdown_timeout: Option<Duration>,
-    status: Arc<Mutex<WorkerStatus>>,
+    pub status: Arc<Mutex<WorkerStatus>>,
     wal: WalClient,
 }
 
@@ -261,6 +261,7 @@ impl Worker {
             MessageTopic(SYSTEM_TOPIC_AUDIT.parse().unwrap()),
             MessagePayload(serde_json::to_vec(&msg).map_err(|e| SerializeError(e.to_string()))?),
             Standard,
+            None,
         );
         TopicRouter::global()
             .send(SYSTEM_TOPIC_AUDIT, audit_msg, None, None)
@@ -339,6 +340,7 @@ impl Worker {
                     .unwrap(),
             ),
             Standard,
+            None,
         );
 
         TopicRouter::global()

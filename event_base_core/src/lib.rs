@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 
 pub mod audit;
@@ -21,6 +22,13 @@ pub mod worker;
 pub mod worker_registry;
 
 static NODE_NAME: OnceLock<Arc<String>> = OnceLock::new();
+static NODE_TYPE: OnceLock<Arc<NodeType>> = OnceLock::new();
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub enum NodeType {
+    Host,
+    Worker,
+}
 
 pub fn set_node_name(node_name: String) {
     NODE_NAME
@@ -34,4 +42,14 @@ pub fn get_node_name() -> String {
         .expect("Node name not initialized")
         .clone()
         .to_string()
+}
+
+pub fn set_node_type(node_type: NodeType) {
+    NODE_TYPE
+        .set(Arc::new(node_type))
+        .expect("Node type already set");
+}
+
+pub fn get_node_type() -> Arc<NodeType> {
+    NODE_TYPE.get().expect("Node type not initialized").clone()
 }

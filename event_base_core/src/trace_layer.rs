@@ -92,6 +92,7 @@ where
                 MessageTopic(SYSTEM_TOPIC_TRACE.to_string()),
                 MessagePayload(serde_json::to_vec(&record).unwrap()),
                 DeliveryMode::Standard,
+                None,
             );
             tokio::spawn(async move {
                 TopicRouter::global()

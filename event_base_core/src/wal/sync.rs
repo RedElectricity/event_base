@@ -21,8 +21,6 @@ pub struct WalSyncMessage {
     pub timestamp: SystemTime,
 }
 
-// event_base_core/src/wal/client.rs
-
 pub struct WalClient {
     worker_id: String,
 }
@@ -57,6 +55,7 @@ impl WalClient {
             MessageTopic(SYSTEM_TOPIC_WAL_SYNC.parse().unwrap()),
             MessagePayload(payload),
             Standard,
+            None,
         );
         TopicRouter::global()
             .send(SYSTEM_TOPIC_WAL_SYNC, msg, None, None)

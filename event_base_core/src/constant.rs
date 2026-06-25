@@ -6,3 +6,5 @@ pub const SYSTEM_TOPIC_WAL_SYNC: &str = "_system.wal_sync";
 pub const SYSTEM_TOPIC_WORKER_DISCOVERY: &str = "_system.worker_discovery";
 pub const SYSTEM_TOPIC_WORKER_HEARTBEAT: &str = "_system.worker_heartbeat";
 pub const SYSTEM_TOPIC_METRICS: &str = "_system.metrics";
+pub const SYSTEM_TOPIC_TOPIC_DISCOVERY: &str = "_system.topic_discovery";
+pub const SYSTEM_TOPIC_TOPIC_SYNC: &str = "_system.topic_sync";

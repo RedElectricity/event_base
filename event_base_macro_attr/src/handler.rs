@@ -1,8 +1,8 @@
-use darling::ast::NestedMeta;
 use darling::FromMeta;
+use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse, Expr, ItemFn};
+use syn::{Expr, ItemFn, parse};
 
 pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error> {
     let input_fn: ItemFn = parse(input)?;
