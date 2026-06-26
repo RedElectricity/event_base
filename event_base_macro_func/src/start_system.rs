@@ -7,10 +7,14 @@ use event_base_core::shutdown::{ShutdownSender, shutdown_channel};
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::system_handlers::topic::TopicDiscoveryMessage;
 use event_base_core::topic::TopicRouter;
+use event_base_core::trace_layer::TraceLayer;
 use event_base_core::wal::wal::Wal;
 use event_base_core::{NodeType, set_node_type};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing_subscriber::Registry;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 pub async fn start_system_impl(
     node_type: NodeType,
@@ -29,6 +33,11 @@ pub async fn start_system_impl(
 
     event_base_core::registry::register_all_handlers(shutdown_tx.clone()).await?;
     let router = TopicRouter::global();
+
+    let producer = router.get_producer();
+    let trace_layer = TraceLayer::new(producer);
+
+    Registry::default().with(trace_layer).init();
 
     let topics_discovery_msg = EMessage::new(
         MessageTopic(SYSTEM_TOPIC_WORKER_DISCOVERY.parse().unwrap()),

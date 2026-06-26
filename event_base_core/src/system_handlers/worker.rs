@@ -11,7 +11,7 @@ pub struct WorkerDiscoveryHandler {}
 impl EHandler for WorkerDiscoveryHandler {
     async fn handle(&self, msg: &EMessage) -> Ack {
         let info: WorkerDiscoveryMessage =
-            match serde_json::from_slice::<WorkerDiscoveryMessage>(&msg.payload.0.as_slice()) {
+            match serde_json::from_slice::<WorkerDiscoveryMessage>(msg.payload.0.as_slice()) {
                 Ok(msg) => msg,
                 Err(e) => {
                     eprintln!(
@@ -41,7 +41,7 @@ pub struct WorkerHeartbeatHandler {}
 impl EHandler for WorkerHeartbeatHandler {
     async fn handle(&self, msg: &EMessage) -> Ack {
         let heartbeat: WorkerHeartbeatMessage =
-            match serde_json::from_slice::<WorkerHeartbeatMessage>(&msg.payload.0.as_slice()) {
+            match serde_json::from_slice::<WorkerHeartbeatMessage>(msg.payload.0.as_slice()) {
                 Ok(msg) => msg,
                 Err(e) => {
                     eprintln!(

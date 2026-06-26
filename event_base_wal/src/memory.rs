@@ -95,7 +95,7 @@ impl Wal for MemoryWal {
         registry: HashMap<String, WorkerInfo>,
     ) -> Result<(), CoreError> {
         let mut store = self.worker_registry.lock().await;
-        store.extend(registry.into_iter());
+        store.extend(registry);
         Ok(())
     }
 

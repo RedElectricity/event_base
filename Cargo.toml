@@ -3,10 +3,38 @@ name = "event_base"
 version = "0.1.0"
 edition = "2024"
 authors = ["RedElectricity <redelectricity@outlook.com>"]
-description = "An Event Driven Message Queue Framework"
+description = "An Event Driven Framework"
 
 [dependencies]
+event_base_core = {path = "event_base_core"}
+event_base_audit = {path = "event_base_audit"}
+event_base_grpc = {path = "event_base_grpc"}
+event_base_macro_attr = {path = "event_base_macro_attr"}
+event_base_macro_func = {path = "event_base_macro_func"}
+event_base_middleware = {path = "event_base_middleware"}
+event_base_queue = {path = "event_base_queue"}
+event_base_wal = {path = "event_base_wal"}
 
 [workspace]
-members = ["event_base_core", "event_base_wal", "event_base_test", "event_base_queue", "event_base_middleware", "event_base_audit", "event_base_macro_attr", "event_base_macro_func", "event_base_grpc"]
+members = ["event_base_core",
+            "event_base_wal",
+            "event_base_test",
+            "event_base_queue",
+            "event_base_middleware",
+            "event_base_audit",
+            "event_base_macro_attr",
+            "event_base_macro_func",
+            "event_base_grpc"
+            ]
 resolver = "3"
+
+[features]
+default = ["memory", "macro"]
+full = ["gRPC", "middleware", "macro", "memory", "persistent","audit"]
+
+gRPC = []
+middleware = []
+audit = []
+memory = []
+persistent = []
+macro = []

@@ -74,7 +74,7 @@ impl Worker {
         loop {
             tokio::select! {
                 _ = shutdown_receiver.recv() => {
-                    self.shutdown(self.shutdown_check_interval, Option::from(self.shutdown_timeout)).await;
+                    self.shutdown(self.shutdown_check_interval, self.shutdown_timeout).await;
                     break;
                 }
                 msg = consumer.receive() => {

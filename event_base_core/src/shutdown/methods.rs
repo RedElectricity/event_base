@@ -39,10 +39,7 @@ pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Resu
             worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await;
-            ConsumerRouter::global()
-                .del_worker(&worker.name)
-                .await
-                .map_err(|e| e)?;
+            ConsumerRouter::global().del_worker(&worker.name).await?;
             break;
         }
         tokio::time::sleep(poll_interval).await;

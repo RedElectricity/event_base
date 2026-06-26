@@ -18,7 +18,7 @@ pub struct ShutdownHandler {
 impl EHandler for ShutdownHandler {
     async fn handle(&self, msg: &EMessage) -> Ack {
         let info: ShutdownCommand =
-            match serde_json::from_slice::<ShutdownCommand>(&msg.payload.0.as_slice()) {
+            match serde_json::from_slice::<ShutdownCommand>(msg.payload.0.as_slice()) {
                 Ok(msg) => msg,
                 Err(e) => {
                     eprintln!("[SHUTDOWN]Failed to deserialize ShutdownCommand: {}", e);
@@ -69,13 +69,12 @@ impl EHandler for ShutdownAckHandler {
         WorkerRegistry::global()
             .unregister(&ack.worker_name)
             .await
-            .expect(
-                format!(
+            .unwrap_or_else(|_| {
+                panic!(
                     "[SHUTDOWN ACK]Failed to unregister worker: {}",
-                    &ack.worker_name
+                    ack.worker_name
                 )
-                .as_str(),
-            );
+            });
 
         tracing::info!("Worker {} shutdown confirmed", ack.worker_name);
         Ack::Ack

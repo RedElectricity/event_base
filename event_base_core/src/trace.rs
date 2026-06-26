@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceRecord {
-    pub trace_id: String,
+    pub trace_id: Option<String>,
     pub span_id: String,
     pub parent_span_id: Option<String>,
     pub name: String,

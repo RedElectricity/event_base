@@ -5,7 +5,7 @@ use crate::topic::TopicRouter;
 use crate::trace::{TraceLevel, TraceRecord};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tracing::span::{Attributes, Id};
 use tracing_core::Subscriber;
@@ -13,16 +13,12 @@ use tracing_serde::AsSerde;
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
 pub struct TraceLayer {
-    pending_spans: Arc<Mutex<HashMap<Id, TraceRecord>>>,
     producer: Arc<dyn EProducer>,
 }
 
 impl TraceLayer {
     pub fn new(producer: Arc<dyn EProducer>) -> Self {
-        Self {
-            pending_spans: Arc::new(Mutex::new(HashMap::new())),
-            producer,
-        }
+        Self { producer }
     }
 }
 
@@ -36,7 +32,7 @@ where
         id: &Id,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let span = ctx.span(&id).unwrap();
+        let span = ctx.span(id).unwrap();
         let serializable = attrs.as_serde();
         let mut extensions = span.extensions_mut();
 
@@ -49,10 +45,18 @@ where
             Map::new()
         };
 
-        let fields = HashMap::from_iter(fields.into_iter());
+        let trace_id: Option<String> = attrs.fields().iter().find_map(|x| {
+            if x.name() == "trace_id" {
+                Option::from(x.to_string())
+            } else {
+                None
+            }
+        });
+
+        let fields = HashMap::from_iter(fields);
 
         let record = TraceRecord {
-            trace_id: attrs.metadata().name().to_string(),
+            trace_id,
             span_id: id.into_u64().to_string(),
             parent_span_id: span.parent().map(|p| p.id().into_u64().to_string()),
             name: span.name().to_string(),
@@ -70,13 +74,54 @@ where
         extensions.insert(record);
     }
 
-    // fn on_event(
-    //     &self,
-    //     event: &tracing::Event<'_>,
-    //     _ctx: tracing_subscriber::layer::Context<'_, S>,
-    // ) {
-    //
-    // }
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let event_serializable = event.as_serde();
+
+        let json_value =
+            serde_json::to_value(&event_serializable).unwrap_or_else(|_| serde_json::json!({}));
+
+        let fields = if let Value::Object(obj) = json_value {
+            obj.clone()
+        } else {
+            Map::new()
+        };
+
+        let fields = HashMap::from_iter(fields);
+
+        let record = TraceRecord {
+            span_id: "".to_string(),
+            trace_id: None,
+            name: event.metadata().name().to_string(),
+            target: event.metadata().target().to_string(),
+            level: match *event.metadata().level() {
+                tracing::Level::ERROR => TraceLevel::Error,
+                tracing::Level::WARN => TraceLevel::Warn,
+                tracing::Level::INFO => TraceLevel::Info,
+                tracing::Level::DEBUG => TraceLevel::Debug,
+                tracing::Level::TRACE => TraceLevel::Trace,
+            },
+            fields,
+            started_at: Some(SystemTime::now()),
+            finished_at: Some(SystemTime::now()),
+            duration: None,
+            message_id: None,
+            worker_id: None,
+            topic: None,
+            parent_span_id: None,
+        };
+
+        let msg = EMessage::new(
+            MessageTopic(SYSTEM_TOPIC_TRACE.to_string()),
+            MessagePayload(serde_json::to_vec(&record).unwrap()),
+            DeliveryMode::Standard,
+            None,
+        );
+        let _ = self.producer.try_send(msg);
+    }
 
     fn on_close(&self, id: Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let span = ctx.span(&id).unwrap();

@@ -6,7 +6,7 @@ use tonic::transport::Server;
 pub mod server;
 
 pub async fn serve(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let service = EventBaseService::default();
+    let service = EventBaseService;
     Server::builder()
         .add_service(EventBaseServer::new(service))
         .serve(addr)

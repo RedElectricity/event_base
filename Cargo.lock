@@ -246,6 +246,16 @@ dependencies = [
 [[package]]
 name = "event_base"
 version = "0.1.0"
+dependencies = [
+ "event_base_audit",
+ "event_base_core",
+ "event_base_grpc",
+ "event_base_macro_attr",
+ "event_base_macro_func",
+ "event_base_middleware",
+ "event_base_queue",
+ "event_base_wal",
+]
 
 [[package]]
 name = "event_base_audit"
@@ -304,6 +314,7 @@ dependencies = [
  "event_base_core",
  "serde_json",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

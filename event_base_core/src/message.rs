@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use uuid::{Uuid, Version};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct EMessage {

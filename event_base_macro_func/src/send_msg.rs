@@ -10,7 +10,7 @@ pub async fn send_msg_impl(
 ) -> Result<(), CoreError> {
     let topic = msg.clone().topic.0;
     TopicRouter::global()
-        .send(&*topic, msg, try_send, time_out)
+        .send(&topic, msg, try_send, time_out)
         .await?;
     Ok(())
 }

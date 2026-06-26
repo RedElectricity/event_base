@@ -99,7 +99,7 @@ impl TopicRouter {
         let mut wal = self.wal.write().await;
         wal.append(record).await?;
 
-        if msg.deliver_at != None {
+        if msg.deliver_at.is_some() {
             if msg.deliver_at < Option::from(SystemTime::now()) {
                 return Err(CoreError::ErrorTime);
             }
@@ -173,5 +173,9 @@ impl TopicRouter {
         if !topic.contains(topic) {
             topics.push(topic.to_string());
         }
+    }
+
+    pub fn get_producer(&self) -> Arc<dyn EProducer> {
+        self.producer.clone()
     }
 }

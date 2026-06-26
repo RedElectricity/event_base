@@ -158,7 +158,9 @@ impl EventBase for EventBaseService {
                         },
                     }
                 }
-                _ => unreachable!(),
+                _ => {
+                    return Err(Status::invalid_argument("Invalid strategy"));
+                }
             }
             let msg = EMessage::new(
                 MessageTopic(SYSTEM_TOPIC_SHUTDOWN.parse().unwrap()),
@@ -169,11 +171,8 @@ impl EventBase for EventBaseService {
             let result = TopicRouter::global()
                 .send(SYSTEM_TOPIC_SHUTDOWN, msg, None, None)
                 .await;
-            if result.is_err() {
-                return Err(Status::internal(format!(
-                    "[SHUTDOWN]: {}",
-                    result.unwrap_err()
-                )));
+            if let Err(e) = result {
+                return Err(Status::internal(format!("[SHUTDOWN]: {}", e)));
             }
             return Ok(Response::new(ShutdownResponse { success: true }));
         }

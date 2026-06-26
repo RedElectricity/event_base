@@ -37,7 +37,7 @@ impl EHandler for TopicDiscovery {
 
         for item in topics.has_topics {
             if !topic_list.contains(&item) {
-                topic_router.register_topic(&*item).await;
+                topic_router.register_topic(&item).await;
             }
         }
 
@@ -83,7 +83,7 @@ impl EHandler for TopicSync {
 
         for item in topics.topics {
             if !topic_list.contains(&item) {
-                topic_router.register_topic(&*item).await;
+                topic_router.register_topic(&item).await;
             }
         }
 

@@ -12,7 +12,7 @@ impl AuditWriter for ConsoleAuditWriter {
 
         println!(
             "[AUDIT] {} | topic={} | msg={} | worker={:?} | result={:?} | duration={:?}ms | error={:?}",
-            datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
+            datetime.format("%Y-%m-%d %H:%M:%S"),
             record.topic,
             record.message_id,
             record.worker_id,

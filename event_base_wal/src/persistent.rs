@@ -35,7 +35,7 @@ impl PersistentWal {
         if path.exists() {
             let data = fs::read(&path).await;
             let (store, _): (WalStore, _) =
-                bincode::decode_from_slice(&data.unwrap().as_slice(), config::standard()).unwrap();
+                bincode::decode_from_slice(data.unwrap().as_slice(), config::standard()).unwrap();
             Self {
                 records: Arc::new(Mutex::new(
                     store
@@ -103,7 +103,7 @@ impl Wal for PersistentWal {
                 .collect(),
             delays: self.delays.clone().lock().await.values().cloned().collect(),
             worker_registry: worker_registry.clone(),
-            id_counter: self.id_counter.clone().lock().await.clone(),
+            id_counter: *self.id_counter.clone().lock().await,
         };
         let bytes = bincode::encode_to_vec(&store, config::standard())
             .map_err(|e| SerializeError(e.to_string()))?;
@@ -146,7 +146,7 @@ impl Wal for PersistentWal {
         registry: HashMap<String, WorkerInfo>,
     ) -> Result<(), CoreError> {
         let mut store = self.worker_registry.lock().await;
-        store.extend(registry.into_iter());
+        store.extend(registry);
         Ok(())
     }
 
