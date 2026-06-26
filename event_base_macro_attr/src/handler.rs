@@ -87,7 +87,6 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                     #shutdown_check_interval.map(std::time::Duration::from_millis),
                     shutdown_rx,
                 ).await?;
-                info!("[WORKER]Worker {} start", worker_id);
             }
 
             Ok(())
