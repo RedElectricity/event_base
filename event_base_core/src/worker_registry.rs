@@ -79,6 +79,9 @@ impl WorkerRegistry {
         if let Some(info) = workers.get_mut(worker_id) {
             info.last_heartbeat = SystemTime::now();
         }
+
+        self.save_worker_registry().await?;
+
         Ok(())
     }
 
@@ -116,6 +119,8 @@ impl WorkerRegistry {
         for worker_id in &stale {
             workers.remove(worker_id);
         }
+
+        self.save_worker_registry().await?;
 
         Ok(stale)
     }

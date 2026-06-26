@@ -51,7 +51,10 @@ impl TopicRouter {
 
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
         let wal = &mut self.wal.write().await;
-        let pending = wal.replay_pending().await?;
+        let pending = {
+            let mut wal = self.wal.write().await;
+            wal.replay_pending().await?
+        };
 
         let mut summary = ReplaySummary::default();
         let topic_set: Option<HashSet<String>> =
@@ -149,19 +152,19 @@ impl TopicRouter {
     pub async fn run_delay_scheduler() {
         let router = TopicRouter::global();
         loop {
-            let wal = router.wal.read().await;
-            match wal.fetch_ready().await {
-                Ok(ready_records) => {
-                    for record in ready_records {
-                        let mut msg = record.message;
-                        msg.deliver_at = None;
-                        if let Err(e) = router.send(&msg.clone().topic.0, msg, None, None).await {
-                            tracing::error!("Failed to deliver delayed message: {}", e);
-                        }
-                    }
+            let ready_records = {
+                let wal = router.wal.read().await;
+                wal.fetch_ready().await.unwrap_or_default()
+            };
+
+            for record in ready_records {
+                let mut msg = record.message;
+                msg.deliver_at = None;
+                if let Err(e) = router.send(&msg.clone().topic.0, msg, None, None).await {
+                    tracing::error!("Failed to deliver delayed message: {}", e);
                 }
-                Err(e) => tracing::error!("Failed to fetch ready: {}", e),
             }
+
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }

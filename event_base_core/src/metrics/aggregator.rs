@@ -34,7 +34,8 @@ impl MetricsAggregator {
                     entry.1 += duration;
                 }
             }
-            _ => unreachable!(),
+
+            AuditEventType::ProcessingStarted => {}
         }
     }
 

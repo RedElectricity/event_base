@@ -32,7 +32,7 @@ pub async fn shutdown_all_workers_two_stage(
     for worker in workers {
         worker
             .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
-            .await;
+            .await?;
         let _ = ConsumerRouter::global().del_worker(&worker.name).await;
         tracing::warn!("Force removed worker: {}", worker.name);
     }
@@ -46,7 +46,7 @@ pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Resu
         if worker.get_status().await == Idle {
             worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
-                .await;
+                .await?;
             ConsumerRouter::global().del_worker(&worker.name).await?;
             break;
         }
@@ -59,7 +59,7 @@ pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Resu
 pub async fn shutdown_force() {
     let workers = ConsumerRouter::global().get_all_workers().await;
     for worker in workers {
-        worker
+        let _ = worker
             .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
             .await;
         let _ = ConsumerRouter::global().del_worker(&worker.name).await;
@@ -75,7 +75,7 @@ pub async fn shutdown_idle_only() {
     let workers = ConsumerRouter::global().get_all_workers().await;
     for worker in workers {
         if worker.get_status().await == Idle {
-            worker
+            let _ = worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await;
             let _ = ConsumerRouter::global().del_worker(&worker.name).await;
@@ -87,7 +87,7 @@ pub async fn shutdown_batched(batch_size: usize, interval: Duration) {
     let workers = ConsumerRouter::global().get_all_workers().await;
     for chunk in workers.chunks(batch_size) {
         for worker in chunk {
-            worker
+            let _ = worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await;
             let _ = ConsumerRouter::global().del_worker(&worker.name).await;

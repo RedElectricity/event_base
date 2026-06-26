@@ -80,12 +80,27 @@ impl ConsumerRouter {
                 }
                 consumer.ack(claim_id).await?;
                 let (worker, _) = workers.get(target).unwrap();
-                worker.producer.clone().send(msg.clone()).await?;
+                match worker.producer.send(msg.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!("Fail to dispatch message:{}", e);
+                    }
+                }
             } else {
                 consumer.ack(claim_id).await?;
                 let worker = self.select_local_worker(&msg.topic.0).await;
                 if let Some(w) = worker {
-                    w.producer.send(msg.clone()).await?;
+                    consumer.ack(claim_id).await?;
+                    match w.producer.send(msg.clone()).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::error!("Fail to dispatch message:{}", e);
+                        }
+                    }
+                } else {
+                    consumer.nack(claim_id).await?;
+                    tracing::warn!("No free worker, requeue the message: {}", &msg.id);
+                    continue;
                 }
             }
         }

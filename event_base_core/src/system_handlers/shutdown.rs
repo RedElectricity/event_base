@@ -9,6 +9,7 @@ use crate::worker_registry::WorkerRegistry;
 use async_trait::async_trait;
 use std::time::Duration;
 use tokio::sync::broadcast;
+use tracing::error;
 
 pub struct ShutdownHandler {
     pub(crate) shutdown_tx: broadcast::Sender<()>,
@@ -80,7 +81,7 @@ impl EHandler for ShutdownAckHandler {
                 .unregister(&ack.worker_name)
                 .await
                 .unwrap_or_else(|_| {
-                    panic!(
+                    error!(
                         "[SHUTDOWN ACK]Failed to unregister worker: {}",
                         ack.worker_name
                     )
