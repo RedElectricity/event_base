@@ -300,6 +300,11 @@ dependencies = [
 [[package]]
 name = "event_base_macro_func"
 version = "0.1.0"
+dependencies = [
+ "event_base_core",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "event_base_middleware"

@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use uuid::Uuid;
+use uuid::{Uuid, Version};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct EMessage {
@@ -14,12 +14,13 @@ pub struct EMessage {
     pub consumed_count: u32,
     pub deliver_at: Option<SystemTime>,
     pub to_worker: Option<String>,
+    pub version: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
 pub enum DeliveryMode {
     Standard,
-    Repeated(u32), // 需要 N 个不同 Worker 消费
+    Repeated(u32),
     Broadcast,
 }
 
@@ -61,6 +62,7 @@ impl EMessage {
             consumed_count: 0,
             deliver_at: None,
             to_worker,
+            version: 0,
         }
     }
 }
@@ -83,6 +85,7 @@ impl Default for EMessage {
             consumed_count: 0,
             deliver_at: None,
             to_worker: None,
+            version: 0,
         }
     }
 }

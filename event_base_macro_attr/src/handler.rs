@@ -23,7 +23,6 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
     let pipeline_code = match &middleware {
         Some(mw_expr) => {
             if let Expr::Array(arr) = mw_expr {
-                // 生成每个元素的 .with() 调用
                 let with_calls = arr.elems.iter().map(|elem| {
                     quote! { pipeline = pipeline.with(#elem); }
                 });
@@ -33,7 +32,6 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                     pipeline.build()
                 }}
             } else {
-                // 单个中间件
                 quote! { Pipeline::new(handler).with(#mw_expr).build() }
             }
         }
@@ -70,20 +68,23 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
 
             let handler = Arc::new(#handler_struct_ident);
             let router = TopicRouter::global();
+            let cr = ConsumerRouter::global();
 
-            router.register_topic(#topic, handler).await?;
+            cr.register(&*#topic, handler).await?;
+            router.register_topic(&*#topic).await?;
+
 
             for i in 0..#workers {
                 let worker_id = format!("{}-{}", #topic, i);
                 let shutdown_rx = shutdown_tx.subscribe();
-                let worker = router.create_worker(
+                let worker = cr.create_worker(
                     #topic,
                     handler.clone(),
-                    #timeout,
+                    #timeout.map(std::time::Duration::from_secs),
                     pipeline,
                     shutdown_rx,
                 ).await?;
-                tokio::spawn(worker.start());
+                info!("[WORKER]Worker {} start", worker_id);
             }
 
             Ok(())

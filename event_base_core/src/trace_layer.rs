@@ -43,7 +43,6 @@ where
         let json_value =
             serde_json::to_value(&serializable).unwrap_or_else(|_| serde_json::json!({}));
 
-        // 3. 提取字段（如果 json_value 是 object）
         let fields = if let Value::Object(obj) = json_value {
             obj.clone()
         } else {
@@ -53,12 +52,12 @@ where
         let fields = HashMap::from_iter(fields.into_iter());
 
         let record = TraceRecord {
-            trace_id: attrs.metadata().name().to_string(), // 简化，实际可用 tracing 的 trace_id
+            trace_id: attrs.metadata().name().to_string(),
             span_id: id.into_u64().to_string(),
             parent_span_id: span.parent().map(|p| p.id().into_u64().to_string()),
             name: span.name().to_string(),
             target: span.metadata().target().to_string(),
-            level: TraceLevel::Info, // 从 metadata 提取
+            level: TraceLevel::Info,
             fields,
             started_at: Some(SystemTime::now()),
             finished_at: None,

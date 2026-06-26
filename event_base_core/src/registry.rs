@@ -16,7 +16,6 @@ pub struct HandlerEntry {
     pub register_fn: &'static RegisterFn,
 }
 
-/// Register all Handler
 pub async fn register_all_handlers(shutdown_tx: ShutdownSender) -> Result<(), CoreError> {
     for entry in HANDLER_REGISTRY {
         (entry.register_fn)(shutdown_tx.clone()).await?;

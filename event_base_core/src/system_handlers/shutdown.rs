@@ -66,7 +66,6 @@ impl EHandler for ShutdownAckHandler {
             .map_err(|e| tracing::error!("[SHUTDOWN ACK]Failed to deserialize Shutdown Ack: {}", e))
             .unwrap();
 
-        // 从 WR 删除 Worker
         WorkerRegistry::global()
             .unregister(&ack.worker_name)
             .await

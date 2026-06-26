@@ -113,7 +113,6 @@ impl EConsumer for MemoryConsumer {
     }
 }
 
-// ---------- Consumer Factory ----------
 pub struct MemoryConsumerFactory {
     tx: Sender<EMessage>,
     rx: Receiver<EMessage>,

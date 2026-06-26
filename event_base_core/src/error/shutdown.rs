@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-// error/mod
 #[derive(Debug, thiserror::Error)]
 pub enum ShutdownError {
     #[error("Timeout: {0:?}")]

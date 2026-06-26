@@ -15,7 +15,7 @@ static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
 
 pub struct TopicRouter {
     inner: RwLock<Vec<String>>,
-    wal: Option<Arc<tokio::sync::Mutex<dyn Wal>>>,
+    wal: RwLock<Box<dyn Wal>>,
     producer: Arc<dyn EProducer>,
 }
 
@@ -27,10 +27,7 @@ pub struct ReplaySummary {
 }
 
 impl TopicRouter {
-    pub fn init(
-        wal: Option<Arc<tokio::sync::Mutex<dyn Wal>>>,
-        producer: Arc<dyn EProducer>,
-    ) -> Result<(), CoreError> {
+    pub fn init(wal: RwLock<Box<dyn Wal>>, producer: Arc<dyn EProducer>) -> Result<(), CoreError> {
         let router = Arc::new(TopicRouter {
             inner: RwLock::new(Vec::new()),
             producer,
@@ -49,12 +46,8 @@ impl TopicRouter {
             .clone()
     }
 
-    pub async fn replay(
-        &self,
-        wal: &Arc<tokio::sync::Mutex<dyn Wal>>,
-        topics: Option<&[&str]>,
-    ) -> Result<ReplaySummary, CoreError> {
-        let mut wal = wal.lock().await;
+    pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
+        let wal = &mut self.wal.write().await;
         let pending = wal.replay_pending().await?;
 
         let mut summary = ReplaySummary::default();
@@ -102,21 +95,16 @@ impl TopicRouter {
         try_send: Option<bool>,
         timeout: Option<Duration>,
     ) -> Result<(), CoreError> {
-        if let Some(wal) = &self.wal {
-            let record = WalRecord::from_msg(msg.clone());
-            let mut wal = wal.lock().await;
-            wal.append(record).await?;
-        }
+        let record = WalRecord::from_msg(msg.clone());
+        let mut wal = self.wal.write().await;
+        wal.append(record).await?;
 
         if msg.deliver_at != None {
             if msg.deliver_at < Option::from(SystemTime::now()) {
                 return Err(CoreError::ErrorTime);
             }
-            if let Some(wal) = &self.wal {
-                let record = WalRecord::from_msg(msg.clone());
-                let wal = wal.lock().await;
-                wal.schedule(record).await?;
-            }
+            let record = WalRecord::from_msg(msg.clone());
+            wal.schedule(record).await?;
             return Ok(());
         }
 
@@ -155,12 +143,13 @@ impl TopicRouter {
         Ok(())
     }
 
-    pub async fn run_delay_scheduler(wal: Arc<dyn Wal>, router: Arc<TopicRouter>) {
+    pub async fn run_delay_scheduler() {
+        let router = TopicRouter::global();
         loop {
+            let wal = router.wal.read().await;
             match wal.fetch_ready().await {
                 Ok(ready_records) => {
                     for record in ready_records {
-                        // 投递前清除 deliver_at（避免再次延迟）
                         let mut msg = record.message;
                         msg.deliver_at = None;
                         if let Err(e) = router.send(&msg.clone().topic.0, msg, None, None).await {
@@ -181,6 +170,8 @@ impl TopicRouter {
 
     pub async fn register_topic(&self, topic: &str) {
         let mut topics = self.inner.write().await;
-        topics.push(topic.to_string());
+        if !topic.contains(topic) {
+            topics.push(topic.to_string());
+        }
     }
 }

@@ -76,17 +76,14 @@ impl ConsumerRouter {
 
             let workers = self.worker_index.read().await;
 
-            // 2. 检查 to_worker
             if let Some(target) = &msg.to_worker {
                 if !workers.contains_key(target) {
-                    // 目标 Worker 在其他节点
                     consumer
                         .nack(claim_id)
                         .await
                         .expect("[CONSUMER ROUTER]: Fail to nack msg");
                     continue;
                 }
-                // 本地有目标 Worker
                 consumer
                     .ack(claim_id)
                     .await
@@ -99,7 +96,6 @@ impl ConsumerRouter {
                     .await
                     .expect("[CONSUMER ROUTER]: Fail to send the message to worker");
             } else {
-                // 竞争消费
                 consumer
                     .ack(claim_id)
                     .await

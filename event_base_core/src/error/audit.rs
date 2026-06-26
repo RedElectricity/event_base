@@ -1,4 +1,3 @@
-// error/audit.rs
 #[derive(Debug, thiserror::Error)]
 pub enum AuditError {
     #[error("Write error: {0}")]

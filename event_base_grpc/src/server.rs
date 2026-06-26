@@ -16,7 +16,9 @@ use event_base_core::shutdown::messages::ShutdownStrategy::{
 use event_base_core::shutdown::messages::{ShutdownCommand, ShutdownStrategy};
 use event_base_core::topic::TopicRouter;
 use event_base_core::worker_registry::WorkerRegistry;
+use event_base_core::{NodeType, get_node_type};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::SystemTime;
 use tonic::{Request, Response, Status};
 
@@ -57,6 +59,9 @@ impl EventBase for EventBaseService {
         &self,
         request: Request<ListWorkersRequest>,
     ) -> Result<Response<ListWorkersResponse>, Status> {
+        if get_node_type() == Arc::from(NodeType::Worker) {
+            return Err(Status::invalid_argument("Worker type is not supported"));
+        }
         let topic = request.into_inner().topic;
         if let Ok(workers) = WorkerRegistry::global().get_workers(topic.as_str()).await {
             let mut response: ListWorkersResponse = ListWorkersResponse::default();
