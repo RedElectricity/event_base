@@ -19,10 +19,6 @@ impl MetricsStore {
 
     pub async fn update(&self, metrics: NodeMetrics) {
         let mut nodes = self.nodes.write().await;
-        if nodes.contains_key(&metrics.node_name.clone()) {
-            let node_metrics = nodes.get_mut(&metrics.node_name.clone()).unwrap();
-            *node_metrics = metrics.clone();
-        }
         nodes.insert(metrics.node_name.clone(), metrics);
     }
 

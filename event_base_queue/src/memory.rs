@@ -8,7 +8,6 @@ use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
 use flume::{Receiver, Sender, bounded, unbounded};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -21,7 +20,6 @@ pub struct MemoryProducer {
 pub struct MemoryConsumer {
     tx: Sender<EMessage>, // for NoAck msg
     rx: Receiver<EMessage>,
-    len: Arc<AtomicUsize>,
     pending: Arc<Mutex<HashMap<String, EMessage>>>,
 }
 
@@ -37,7 +35,6 @@ pub fn memory_queue(capacity: usize) -> (MemoryProducer, MemoryConsumer) {
         MemoryConsumer {
             tx,
             rx,
-            len: Arc::new(Default::default()),
             pending: Arc::new(Mutex::new(HashMap::default())),
         },
     )
@@ -60,9 +57,11 @@ impl EProducer for MemoryProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        let _ = tokio::time::timeout(timeout, self.send(msg))
-            .await
-            .map_err(|_| QueueError::Timeout);
+        let result = tokio::time::timeout(timeout, self.send(msg)).await;
+
+        if result.is_err() {
+            return Err(CoreError::from(QueueError::Timeout));
+        }
         Ok(())
     }
 }
@@ -71,10 +70,10 @@ impl EProducer for MemoryProducer {
 impl EConsumer for MemoryConsumer {
     async fn receive(&mut self) -> Option<EMessage> {
         let msg = self.rx.recv_async().await;
-        if msg.is_ok() {
-            self.len.fetch_sub(1, Ordering::Acquire);
+        if let Ok(msg) = msg {
+            return Option::from(msg);
         }
-        Option::from(msg.unwrap())
+        None
     }
 
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError> {
@@ -107,10 +106,6 @@ impl EConsumer for MemoryConsumer {
         pending.remove(claim_id);
         Ok(())
     }
-
-    fn len(&self) -> usize {
-        self.len.load(Ordering::Acquire)
-    }
 }
 
 pub struct MemoryConsumerFactory {
@@ -130,7 +125,6 @@ impl ConsumerFactory for MemoryConsumerFactory {
         Box::new(MemoryConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
-            len: Arc::new(Default::default()),
             pending: Arc::new(Mutex::new(HashMap::default())),
         })
     }
@@ -184,7 +178,6 @@ impl QueueFactory for MemoryQueueFactory {
         Ok(Arc::new(Mutex::new(MemoryConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
-            len: Arc::new(Default::default()),
             pending: Arc::new(Default::default()),
         })))
     }

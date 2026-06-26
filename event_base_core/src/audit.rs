@@ -62,8 +62,11 @@ impl AuditManager {
         self.writers = writers
     }
 
-    pub fn global() -> &'static AuditManager {
-        AUDIT_MANAGER.get().expect("AuditManager not initialized")
+    pub fn global() -> Arc<AuditManager> {
+        AUDIT_MANAGER
+            .get()
+            .expect("AuditManager not initialized")
+            .clone()
     }
 
     pub async fn record(&self, record: AuditRecord) -> Result<(), CoreError> {

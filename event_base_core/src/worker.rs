@@ -1,5 +1,5 @@
 use crate::audit::{AuditEventType, AuditRecord, AuditResult};
-use crate::constant::SYSTEM_TOPIC_AUDIT;
+use crate::constant::{SYSTEM_TOPIC_AUDIT, SYSTEM_TOPIC_SHUTDOWN_ACK};
 use crate::dead_letter::DeadReason;
 use crate::error::CoreError;
 use crate::error::serialize::SerializeError::SerializeError;
@@ -79,8 +79,9 @@ impl Worker {
                 }
                 msg = consumer.receive() => {
                     self.set_status(Working).await;
-                    let msg = msg.unwrap();
-                    self.process_msg(msg).await;
+                    if let Some(msg) = msg {
+                        self.process_msg(msg).await;
+                    }
                     self.set_status(WorkerStatus::Idle).await;
                 }
             }
@@ -326,14 +327,14 @@ impl Worker {
         }
 
         let ack = ShutdownAck {
-            worker_name: "".to_string(),
+            worker_name: self.name.clone(),
             status: ShutdownStatus::Completed,
             timestamp: SystemTime::now(),
             error: None,
         };
 
         let ack_msg = EMessage::new(
-            MessageTopic(SYSTEM_TOPIC_AUDIT.to_string()),
+            MessageTopic(SYSTEM_TOPIC_SHUTDOWN_ACK.to_string()),
             MessagePayload(
                 serde_json::to_vec(&ack)
                     .map_err(|e| error!("{}", SerializeError(e.to_string()).to_string()))
@@ -344,7 +345,7 @@ impl Worker {
         );
 
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_AUDIT, ack_msg, None, None)
+            .send(SYSTEM_TOPIC_SHUTDOWN_ACK, ack_msg, None, None)
             .await
             .expect("[SHUTDOWN ACK] Fail to send shutdown ack message");
     }

@@ -170,7 +170,7 @@ impl TopicRouter {
 
     pub async fn register_topic(&self, topic: &str) {
         let mut topics = self.inner.write().await;
-        if !topic.contains(topic) {
+        if !topics.contains(&topic.to_string()) {
             topics.push(topic.to_string());
         }
     }

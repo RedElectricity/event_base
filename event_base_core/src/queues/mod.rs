@@ -19,10 +19,6 @@ pub trait EConsumer: Send + Sync {
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError>;
     async fn ack(&mut self, claim_id: &str) -> Result<(), CoreError>;
     async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError>;
-    fn len(&self) -> usize;
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 #[derive(Debug, Clone)]

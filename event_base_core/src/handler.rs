@@ -17,12 +17,12 @@ pub enum Ack {
 
 #[async_trait]
 pub trait EHandler: Send + Sync {
-    async fn handle(&self, msg: &EMessage) -> Ack;
+    async fn handler(&self, msg: &EMessage) -> Ack;
 }
 
 #[async_trait]
 impl EHandler for Box<dyn EHandler> {
-    async fn handle(&self, msg: &EMessage) -> Ack {
-        self.handle(msg).await
+    async fn handler(&self, msg: &EMessage) -> Ack {
+        (**self).handler(msg).await
     }
 }

@@ -41,7 +41,7 @@ pub enum CoreError {
     #[error("Topic error: {0}")]
     Topic(#[from] TopicError),
 
-    #[error("Wal error: {0}")]
+    #[error("Handler error: {0}")]
     Handler(#[from] HandlerError),
 
     #[error("IO error: {0}")]

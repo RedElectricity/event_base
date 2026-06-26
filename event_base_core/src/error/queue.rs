@@ -5,7 +5,7 @@ pub enum QueueError {
     #[error("Queue is closed")]
     Closed,
     #[error("Send timeout")]
-    Timeout(),
+    Timeout,
     #[error("Send error: {0}")]
     Send(String),
     #[error("Receive error: {0}")]

@@ -17,7 +17,7 @@ impl WalSyncHandler {
 
 #[async_trait]
 impl EHandler for WalSyncHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let sync: WalSyncMessage = match serde_json::from_slice(&msg.payload.0) {
             Ok(s) => s,
             Err(e) => {

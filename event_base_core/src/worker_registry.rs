@@ -101,7 +101,7 @@ impl WorkerRegistry {
         let now = SystemTime::now();
         let mut workers = self.workers.write().await;
 
-        let stable: Vec<String> = workers
+        let stale: Vec<String> = workers
             .iter()
             .filter(|(_, info)| {
                 let elapsed = now
@@ -113,11 +113,11 @@ impl WorkerRegistry {
             .map(|(id, _)| id.clone())
             .collect();
 
-        for worker_id in &stable {
+        for worker_id in &stale {
             workers.remove(worker_id);
         }
 
-        Ok(stable)
+        Ok(stale)
     }
     async fn save_worker_registry(&self) -> Result<(), CoreError> {
         let workers = self.workers.read().await;

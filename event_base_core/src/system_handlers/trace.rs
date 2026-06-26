@@ -22,7 +22,7 @@ pub trait TraceCollector: Send + Sync {
 
 #[async_trait]
 impl EHandler for SystemTraceHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let record: TraceRecord = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
             Err(e) => {

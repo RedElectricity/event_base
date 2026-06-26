@@ -16,7 +16,7 @@ pub struct ShutdownHandler {
 
 #[async_trait]
 impl EHandler for ShutdownHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let info: ShutdownCommand =
             match serde_json::from_slice::<ShutdownCommand>(msg.payload.0.as_slice()) {
                 Ok(msg) => msg,
@@ -33,8 +33,8 @@ impl EHandler for ShutdownHandler {
             } => {
                 shutdown_all_workers_two_stage(
                     self.shutdown_tx.clone(),
+                    Duration::from_secs(force_timeout_secs),
                     Duration::from_millis(poll_interval_ms),
-                    Duration::from_millis(force_timeout_secs),
                 )
                 .await
                 .expect("[SHUTDOWN] Fail to shutdown all workers two stage");
@@ -61,7 +61,7 @@ pub struct ShutdownAckHandler;
 
 #[async_trait]
 impl EHandler for ShutdownAckHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let ack: ShutdownAck = serde_json::from_slice(&msg.payload.0)
             .map_err(|e| tracing::error!("[SHUTDOWN ACK]Failed to deserialize Shutdown Ack: {}", e))
             .unwrap();

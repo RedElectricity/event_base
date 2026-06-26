@@ -8,7 +8,7 @@ pub struct MetricsHandler {}
 
 #[async_trait]
 impl EHandler for MetricsHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let info: NodeMetrics =
             match serde_json::from_slice::<NodeMetrics>(msg.payload.0.as_slice()) {
                 Ok(msg) => msg,

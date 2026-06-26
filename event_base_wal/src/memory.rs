@@ -5,13 +5,13 @@ use event_base_core::worker_registry::WorkerInfo;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 #[derive(Default, Clone)]
 pub struct MemoryWal {
-    records: Arc<Mutex<HashMap<String, WalRecord>>>,
-    delays: Arc<Mutex<HashMap<String, WalRecord>>>,
-    worker_registry: Arc<Mutex<HashMap<String, WorkerInfo>>>,
+    records: Arc<RwLock<HashMap<String, WalRecord>>>,
+    delays: Arc<RwLock<HashMap<String, WalRecord>>>,
+    worker_registry: Arc<RwLock<HashMap<String, WorkerInfo>>>,
     id_counter: Arc<Mutex<u64>>,
 }
 
@@ -27,7 +27,7 @@ impl Wal for MemoryWal {
         let mut counter = self.id_counter.lock().await;
         *counter += 1;
         record.record_id = *counter;
-        let mut records = self.records.lock().await;
+        let mut records = self.records.write().await;
         records.insert(record.message.id.clone(), record);
         Ok(())
     }
@@ -37,7 +37,7 @@ impl Wal for MemoryWal {
         message_id: &str,
         status: WalRecordState,
     ) -> Result<(), CoreError> {
-        let mut records = self.records.lock().await;
+        let mut records = self.records.write().await;
         if let Some(record) = records.get_mut(message_id) {
             record.status = status;
             Ok(())
@@ -49,7 +49,7 @@ impl Wal for MemoryWal {
     }
 
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError> {
-        let records = self.records.lock().await;
+        let records = self.records.read().await;
         let pendings = records
             .values()
             .filter(|x| x.status == WalRecordState::Pending)
@@ -66,26 +66,36 @@ impl Wal for MemoryWal {
         let mut counter = self.id_counter.lock().await;
         *counter += 1;
         record.record_id = *counter;
-        let mut records = self.delays.lock().await;
+        let mut records = self.delays.write().await;
         records.insert(record.message.id.clone(), record);
         Ok(())
     }
 
     async fn fetch_ready(&self) -> Result<Vec<WalRecord>, CoreError> {
-        let mut delays = self.delays.lock().await;
+        let mut delays = self.delays.write().await;
+        let now = SystemTime::now();
+
         let mut ready = Vec::new();
 
-        for (msg_id, delayed) in delays.clone().drain() {
-            if delayed.message.deliver_at <= Option::from(SystemTime::now()) {
-                ready.push(delayed.clone());
-                delays.remove(&msg_id);
+        let mut to_remove = Vec::new();
+        for (msg_id, delayed) in delays.iter() {
+            match &delayed.message.deliver_at {
+                Some(deliver_at) if deliver_at <= &now => {
+                    ready.push(delayed.clone());
+                    to_remove.push(msg_id.clone());
+                }
+                _ => {}
             }
+        }
+
+        for id in to_remove {
+            delays.remove(&id);
         }
         Ok(ready)
     }
 
     async fn remove_scheduled(&self, msg_id: &str) -> Result<(), CoreError> {
-        let mut store = self.delays.lock().await;
+        let mut store = self.delays.write().await;
         store.remove(msg_id);
         Ok(())
     }
@@ -94,13 +104,13 @@ impl Wal for MemoryWal {
         &self,
         registry: HashMap<String, WorkerInfo>,
     ) -> Result<(), CoreError> {
-        let mut store = self.worker_registry.lock().await;
-        store.extend(registry);
+        let mut store = self.worker_registry.write().await;
+        *store = registry;
         Ok(())
     }
 
     async fn load_worker_registry(&self) -> Result<HashMap<String, WorkerInfo>, CoreError> {
-        let store = self.worker_registry.lock().await;
+        let store = self.worker_registry.write().await;
         Ok(store.clone())
     }
 }

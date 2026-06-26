@@ -48,7 +48,7 @@ impl NodeCollector {
             cpu_usage.push(cpu.cpu_usage())
         }
 
-        let memory_used_percent = (sys.used_memory() / sys.total_memory()) as f32;
+        let memory_used_percent = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
         let node_worker_count = ConsumerRouter::global().get_all_workers().await.len();
 

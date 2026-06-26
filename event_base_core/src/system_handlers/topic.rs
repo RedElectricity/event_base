@@ -23,7 +23,7 @@ pub struct TopicDiscovery {}
 
 #[async_trait]
 impl EHandler for TopicDiscovery {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let topics: TopicDiscoveryMessage = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
             Err(e) => {
@@ -66,7 +66,7 @@ pub struct TopicSync {}
 
 #[async_trait]
 impl EHandler for TopicSync {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         if get_node_type() == Arc::from(Host) {
             return Ack::Ack;
         }

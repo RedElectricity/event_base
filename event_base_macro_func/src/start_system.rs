@@ -30,6 +30,9 @@ pub async fn start_system_impl(
     let global_producer = factory.create_global_producer()?;
     TopicRouter::init(wal_init, global_producer)?;
 
+    let main_consumer = factory.create_main_consumer()?;
+    ConsumerRouter::init(main_consumer, factory)?;
+
     let (shutdown_tx, _) = shutdown_channel();
 
     system_builder.register_all().await?;
@@ -42,9 +45,6 @@ pub async fn start_system_impl(
     });
 
     let router = TopicRouter::global();
-
-    let main_consumer = factory.create_main_consumer()?;
-    ConsumerRouter::init(main_consumer, factory)?;
 
     let producer = router.get_producer();
     let trace_layer = TraceLayer::new(producer);

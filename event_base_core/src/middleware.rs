@@ -19,7 +19,7 @@ impl<'a> Next<'a> {
             };
             mw.handle(msg, next).await
         } else {
-            self.handler.handle(msg).await
+            self.handler.handler(msg).await
         }
     }
 }

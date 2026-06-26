@@ -13,6 +13,8 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
     let workers = args.workers;
     let timeout = args.timeout;
     let middleware = args.middleware;
+    let shutdown_check_interval = args.shutdown_check_interval;
+    let shutdown_timeout = args.shutdown_timeout;
 
     let entry_ident = syn::Ident::new(&format!("_ENTRY_{}", fn_name), fn_name.span());
     let register_ident = syn::Ident::new(&format!("_register_{}", fn_name), fn_name.span());
@@ -29,14 +31,13 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                 quote! {{
                     let mut pipeline = Pipeline::new(handler);
                     #(#with_calls)*
-                    pipeline.build()
                 }}
             } else {
-                quote! { Pipeline::new(handler).with(#mw_expr).build() }
+                quote! { Pipeline::new(handler).with(#mw_expr) }
             }
         }
         None => {
-            quote! { Pipeline::new(handler).build() }
+            quote! { Pipeline::new(handler) }
         }
     };
 
@@ -46,7 +47,7 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
         struct #handler_struct_ident;
 
         #[async_trait::async_trait]
-        impl event_base_core::handler::Handler for #handler_struct_ident {
+        impl event_base_core::handler::EHandler for #handler_struct_ident {
             async fn handle(&self, msg: &event_base_core::message::EMessage) -> event_base_core::handler::Ack {
                 #fn_name(msg).await
             }
@@ -79,9 +80,10 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                 let shutdown_rx = shutdown_tx.subscribe();
                 let worker = cr.create_worker(
                     #topic,
-                    handler.clone(),
-                    #timeout.map(std::time::Duration::from_secs),
                     pipeline,
+                    #timeout.map(std::time::Duration::from_secs),
+                    #shutdown_timeout.map(std::time::Duration::from_secs),
+                    #shutdown_check_interval.map(std::time::Duration::from_millis),
                     shutdown_rx,
                 ).await?;
                 info!("[WORKER]Worker {} start", worker_id);
@@ -102,7 +104,13 @@ pub struct HandlerArgs {
     pub workers: usize,
 
     #[darling(default)]
-    pub timeout: Option<u64>,
+    pub timeout: Option<u64>, // secs
+
+    #[darling(default)]
+    pub shutdown_timeout: Option<u64>, // secs
+
+    #[darling(default)]
+    pub shutdown_check_interval: Option<u64>, // millis
 
     #[darling(default)]
     pub middleware: Option<Expr>,

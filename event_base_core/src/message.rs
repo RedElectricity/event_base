@@ -101,7 +101,5 @@ mod tests {
         let msg = EMessage::new(new_topic.clone(), new_payload, DeliveryMode::Standard, None);
         assert_eq!(msg.topic, new_topic.clone());
         assert_eq!(msg.attempts, 0);
-
-        assert_eq!(msg.attempts, 1);
     }
 }

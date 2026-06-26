@@ -6,7 +6,7 @@ use async_trait::async_trait;
 pub struct AuditHandler {}
 #[async_trait]
 impl EHandler for AuditHandler {
-    async fn handle(&self, msg: &EMessage) -> Ack {
+    async fn handler(&self, msg: &EMessage) -> Ack {
         let record: AuditRecord = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
             Err(e) => {
