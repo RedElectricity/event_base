@@ -1,4 +1,5 @@
 use crate::audit::AuditRecord;
+use crate::error::CoreError;
 use crate::metrics::aggregator::MetricsAggregator;
 use crate::metrics::node::NodeMetrics;
 use crate::metrics::node_store::MetricsStore;
@@ -13,10 +14,27 @@ pub struct MetricsManager {
 }
 
 impl MetricsManager {
-    pub fn global() -> &'static MetricsManager {
+    pub fn init() -> Result<(), CoreError> {
+        let manager = Arc::new(MetricsManager {
+            aggregator: Arc::new(Mutex::new(MetricsAggregator {
+                enqueued: Default::default(),
+                completed: Default::default(),
+                failed: Default::default(),
+                retried: Default::default(),
+                latency_sum: Default::default(),
+            })),
+        });
+        METRICS_MANAGER
+            .set(manager)
+            .map_err(|_| CoreError::AlreadyInitialized)?;
+        Ok(())
+    }
+
+    pub fn global() -> Arc<MetricsManager> {
         METRICS_MANAGER
             .get()
             .expect("MetricsManager not initialized")
+            .clone()
     }
 
     pub async fn feed_audit(&self, record: &AuditRecord) {

@@ -40,7 +40,6 @@ pub fn get_node_name() -> String {
     NODE_NAME
         .get()
         .expect("Node name not initialized")
-        .clone()
         .to_string()
 }
 

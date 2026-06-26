@@ -17,6 +17,14 @@ pub async fn shutdown_all_workers_two_stage(
         if workers.is_empty() {
             return Ok(());
         }
+        let all_done = workers.iter().all(|w| w.is_shutdown_complete());
+        if all_done {
+            // 全部完成，统一清理
+            for w in workers {
+                let _ = ConsumerRouter::global().del_worker(&w.name).await;
+            }
+            return Ok(());
+        }
         tokio::time::sleep(poll_interval).await;
     }
 

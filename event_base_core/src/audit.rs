@@ -51,11 +51,16 @@ pub struct AuditManager {
 }
 
 impl AuditManager {
-    pub fn new(capacity: usize) -> Self {
-        Self {
+    pub fn init(capacity: usize) -> Result<(), CoreError> {
+        let audit = AuditManager {
             buffer: Arc::new(RwLock::new(HeapRb::new(capacity))),
             writers: Vec::new(),
-        }
+        };
+
+        AUDIT_MANAGER
+            .set(Arc::from(audit))
+            .map_err(|_| CoreError::AlreadyInitialized)?;
+        Ok(())
     }
 
     pub fn with_writers(&mut self, writers: Vec<Arc<dyn AuditWriter>>) {

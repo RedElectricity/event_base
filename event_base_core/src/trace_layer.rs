@@ -139,10 +139,9 @@ where
                 None,
             );
             tokio::spawn(async move {
-                TopicRouter::global()
+                let _ = TopicRouter::global()
                     .send(SYSTEM_TOPIC_TRACE, msg, None, None)
-                    .await
-                    .expect("Fail to send tracing msg"); // 失败静默忽略
+                    .await;
             });
         }
     }

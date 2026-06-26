@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 static WORKER_REGISTRY: OnceLock<Arc<WorkerRegistry>> = OnceLock::new();
 
@@ -31,15 +31,15 @@ pub struct WorkerDiscoveryMessage {
 
 pub struct WorkerRegistry {
     workers: RwLock<HashMap<String, WorkerInfo>>,
-    wal: Option<Arc<Mutex<dyn Wal>>>,
+    wal: Option<Arc<RwLock<Box<dyn Wal>>>>,
 }
 
 impl WorkerRegistry {
-    pub async fn init(wal: Option<Arc<Mutex<dyn Wal>>>) -> Result<(), CoreError> {
+    pub async fn init(wal: Option<Arc<RwLock<Box<dyn Wal>>>>) -> Result<(), CoreError> {
         let wr = wal
             .clone()
             .unwrap()
-            .lock()
+            .read()
             .await
             .load_worker_registry()
             .await?;
@@ -124,7 +124,7 @@ impl WorkerRegistry {
         self.wal
             .clone()
             .unwrap()
-            .lock()
+            .write()
             .await
             .save_worker_registry(workers.clone())
             .await

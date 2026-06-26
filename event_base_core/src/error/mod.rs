@@ -15,7 +15,7 @@ use crate::error::serialize::SerializeError;
 use crate::error::shutdown::ShutdownError;
 use crate::error::topic::TopicError;
 use crate::error::wal::WalError;
-use std::time::Duration;
+use std::time::{Duration, SystemTimeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -25,6 +25,9 @@ pub enum CoreError {
 
     #[error("WAL error: {0}")]
     Wal(#[from] WalError),
+
+    #[error("Serde Serialize Error: {0}")]
+    SerdeSerialize(#[from] serde_json::Error),
 
     #[error("Middleware error: {0}")]
     Middleware(#[from] MiddlewareError),
@@ -61,6 +64,9 @@ pub enum CoreError {
 
     #[error("Object already exists")]
     AlreadyInitialized,
+
+    #[error("Process Time Error: {0}")]
+    ProcessTimeError(#[from] SystemTimeError),
 
     #[error("Error Time")]
     ErrorTime,

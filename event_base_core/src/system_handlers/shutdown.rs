@@ -2,8 +2,8 @@ use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::shutdown::messages::{ShutdownAck, ShutdownCommand, ShutdownStrategy};
 use crate::shutdown::methods::{
-    shutdown_all_workers_two_stage, shutdown_batched, shutdown_force, shutdown_idle_only,
-    shutdown_timeout,
+    graceful_shutdown, shutdown_all_workers_two_stage, shutdown_batched, shutdown_force,
+    shutdown_idle_only, shutdown_timeout,
 };
 use crate::worker_registry::WorkerRegistry;
 use async_trait::async_trait;
@@ -31,13 +31,26 @@ impl EHandler for ShutdownHandler {
                 poll_interval_ms,
                 force_timeout_secs,
             } => {
-                shutdown_all_workers_two_stage(
+                if let Err(_) = shutdown_all_workers_two_stage(
                     self.shutdown_tx.clone(),
                     Duration::from_secs(force_timeout_secs),
                     Duration::from_millis(poll_interval_ms),
                 )
                 .await
-                .expect("[SHUTDOWN] Fail to shutdown all workers two stage");
+                {
+                    eprintln!("[SHUTDOWN] Fail to shutdown all workers two stage")
+                }
+            }
+            ShutdownStrategy::Graceful {
+                worker_name,
+                poll_interval_ms,
+            } => {
+                let result =
+                    graceful_shutdown(&*worker_name, Duration::from_millis(poll_interval_ms)).await;
+                if let Err(e) = result {
+                    eprintln!("[SHUTDOWN]Failed to grace ShutdownCommand: {}", e);
+                    return Ack::Ack;
+                }
             }
             ShutdownStrategy::Timeout { total_timeout_secs } => {
                 shutdown_timeout(Duration::from_secs(total_timeout_secs)).await;
@@ -50,9 +63,7 @@ impl EHandler for ShutdownHandler {
             } => {
                 shutdown_batched(batch_size, Duration::from_millis(interval_ms)).await;
             }
-            _ => unreachable!(),
         }
-
         Ack::Ack
     }
 }
@@ -62,21 +73,22 @@ pub struct ShutdownAckHandler;
 #[async_trait]
 impl EHandler for ShutdownAckHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let ack: ShutdownAck = serde_json::from_slice(&msg.payload.0)
-            .map_err(|e| tracing::error!("[SHUTDOWN ACK]Failed to deserialize Shutdown Ack: {}", e))
-            .unwrap();
+        let ack = serde_json::from_slice::<ShutdownAck>(&msg.payload.0);
 
-        WorkerRegistry::global()
-            .unregister(&ack.worker_name)
-            .await
-            .unwrap_or_else(|_| {
-                panic!(
-                    "[SHUTDOWN ACK]Failed to unregister worker: {}",
-                    ack.worker_name
-                )
-            });
+        if let Ok(ack) = ack {
+            WorkerRegistry::global()
+                .unregister(&ack.worker_name)
+                .await
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "[SHUTDOWN ACK]Failed to unregister worker: {}",
+                        ack.worker_name
+                    )
+                });
 
-        tracing::info!("Worker {} shutdown confirmed", ack.worker_name);
+            tracing::info!("Worker {} shutdown confirmed", ack.worker_name);
+        }
+
         Ack::Ack
     }
 }

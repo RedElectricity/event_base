@@ -5,7 +5,9 @@ use crate::constant::{
     SYSTEM_TOPIC_WAL_SYNC, SYSTEM_TOPIC_WORKER_DISCOVERY, SYSTEM_TOPIC_WORKER_HEARTBEAT,
 };
 use crate::error::CoreError;
+use crate::metrics::manager::MetricsManager;
 use crate::metrics::node::NodeCollector;
+use crate::metrics::node_store::MetricsStore;
 use crate::queues::consumer_router::ConsumerRouter;
 use crate::shutdown::ShutdownSender;
 use crate::system_handlers::audit::AuditHandler;
@@ -18,20 +20,26 @@ use crate::system_handlers::worker::{WorkerDiscoveryHandler, WorkerHeartbeatHand
 use crate::wal::wal::Wal;
 use crate::{NodeType, get_node_type};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 pub struct SystemHandlerBuilder {
     trace_collectors: Vec<Arc<dyn TraceCollector>>,
-    wal: Arc<Mutex<dyn Wal>>,
+    wal: Arc<RwLock<dyn Wal>>,
     shutdown_handler: ShutdownSender,
+    audit_buf_capacity: usize,
 }
 
 impl SystemHandlerBuilder {
-    pub fn new(wal: Arc<Mutex<dyn Wal>>, shutdown_sender: ShutdownSender) -> Self {
+    pub fn new(
+        wal: Arc<RwLock<dyn Wal>>,
+        shutdown_sender: ShutdownSender,
+        audit_buf_capacity: usize,
+    ) -> Self {
         Self {
             trace_collectors: Vec::new(),
             wal,
             shutdown_handler: shutdown_sender,
+            audit_buf_capacity,
         }
     }
 
@@ -42,6 +50,9 @@ impl SystemHandlerBuilder {
 
     pub async fn register_all(&self) -> Result<(), CoreError> {
         let router = ConsumerRouter::global();
+        AuditManager::init(self.audit_buf_capacity)?;
+        MetricsManager::init()?;
+        MetricsStore::init()?;
 
         if get_node_type() == Arc::from(NodeType::Worker) {
             router

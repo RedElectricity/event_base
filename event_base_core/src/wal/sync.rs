@@ -1,6 +1,5 @@
 use crate::constant::SYSTEM_TOPIC_WAL_SYNC;
 use crate::error::CoreError;
-use crate::error::serialize::SerializeError::SerializeError;
 use crate::message::DeliveryMode::Standard;
 use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::topic::TopicRouter;
@@ -49,10 +48,10 @@ impl WalClient {
             timestamp: SystemTime::now(),
         };
 
-        let payload = serde_json::to_vec(&sync_msg).map_err(|e| SerializeError(e.to_string()))?;
+        let payload = serde_json::to_vec(&sync_msg)?;
 
         let msg = EMessage::new(
-            MessageTopic(SYSTEM_TOPIC_WAL_SYNC.parse().unwrap()),
+            MessageTopic(SYSTEM_TOPIC_WAL_SYNC.to_string()),
             MessagePayload(payload),
             Standard,
             None,

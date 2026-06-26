@@ -27,7 +27,7 @@ impl EHandler for TopicDiscovery {
         let topics: TopicDiscoveryMessage = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("Failed to deserialize audit record: {}", e);
+                tracing::error!("Failed to deserialize topic discovery message: {}", e);
                 return Ack::Ack;
             }
         };
@@ -42,21 +42,23 @@ impl EHandler for TopicDiscovery {
         }
 
         let topics_sync_msg = EMessage::new(
-            MessageTopic(SYSTEM_TOPIC_TOPIC_SYNC.parse().unwrap()),
+            MessageTopic(SYSTEM_TOPIC_TOPIC_SYNC.to_string()),
             MessagePayload(
                 serde_json::to_vec(&TopicSyncMessage {
                     topics: topic_router.list_topics().await,
                 })
-                .unwrap(),
+                .unwrap_or_default(),
             ),
             Standard,
             None,
         );
 
-        topic_router
+        if let Err(_) = topic_router
             .send(SYSTEM_TOPIC_TOPIC_SYNC, topics_sync_msg, None, None)
             .await
-            .expect("[TOPIC DISCOVERY] Failed to send topic sync message");
+        {
+            eprintln!("[TOPIC DISCOVERY] Failed to send topic sync message")
+        }
 
         Ack::Ack
     }
@@ -73,7 +75,7 @@ impl EHandler for TopicSync {
         let topics: TopicSyncMessage = match serde_json::from_slice(&msg.payload.0) {
             Ok(r) => r,
             Err(e) => {
-                tracing::error!("Failed to deserialize audit record: {}", e);
+                tracing::error!("Failed to deserialize topic sync message: {}", e);
                 return Ack::Ack;
             }
         };

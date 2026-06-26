@@ -27,10 +27,9 @@ impl EHandler for WorkerDiscoveryHandler {
             last_heartbeat: SystemTime::now(),
         };
 
-        WorkerRegistry::global()
-            .register(worker)
-            .await
-            .expect("[WORKER DISCOVERY]register worker failed");
+        if let Err(_) = WorkerRegistry::global().register(worker).await {
+            eprintln!("[WORKER DISCOVERY]register worker failed")
+        }
         Ack::Ack
     }
 }

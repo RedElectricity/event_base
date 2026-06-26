@@ -5,9 +5,8 @@ package event_base;
 message Empty {}
 
 enum NodeType {
-  NODE_TYPE_UNKNOWN = 0;
+  NODE_TYPE_HOST= 0;
   NODE_TYPE_WORKER = 1;
-  NODE_TYPE_MASTER = 2;
 }
 
 message ListNodeMetricsRequest {

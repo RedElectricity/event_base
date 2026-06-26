@@ -1,5 +1,5 @@
-use crate::error::CoreError;
 use crate::error::topic::TopicError;
+use crate::error::CoreError;
 use crate::handler::EHandler;
 use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
@@ -54,10 +54,10 @@ impl ConsumerRouter {
             .clone()
     }
 
-    pub async fn recv(&self) {
+    pub async fn recv(&self) -> Result<(), CoreError> {
         loop {
             let mut consumer = self.consumer.lock().await;
-            let claimed = { consumer.claim().await.unwrap() };
+            let claimed = { consumer.claim().await? };
 
             let Some(claimed) = claimed else { continue };
 
@@ -67,10 +67,7 @@ impl ConsumerRouter {
             let local_workers = self.local_topics.read().await;
 
             if !local_workers.contains_key(&msg.topic.0) {
-                consumer
-                    .nack(claim_id)
-                    .await
-                    .expect("[CONSUMER ROUTER]: Fail to nack msg");
+                consumer.nack(claim_id).await?;
                 continue;
             }
 
@@ -78,34 +75,17 @@ impl ConsumerRouter {
 
             if let Some(target) = &msg.to_worker {
                 if !workers.contains_key(target) {
-                    consumer
-                        .nack(claim_id)
-                        .await
-                        .expect("[CONSUMER ROUTER]: Fail to nack msg");
+                    consumer.nack(claim_id).await?;
                     continue;
                 }
-                consumer
-                    .ack(claim_id)
-                    .await
-                    .expect("[CONSUMER ROUTER]: Fail to ack msg");
+                consumer.ack(claim_id).await?;
                 let (worker, _) = workers.get(target).unwrap();
-                worker
-                    .producer
-                    .clone()
-                    .send(msg.clone())
-                    .await
-                    .expect("[CONSUMER ROUTER]: Fail to send the message to worker");
+                worker.producer.clone().send(msg.clone()).await?;
             } else {
-                consumer
-                    .ack(claim_id)
-                    .await
-                    .expect("[CONSUMER ROUTER]: Fail to ack msg");
+                consumer.ack(claim_id).await?;
                 let worker = self.select_local_worker(&msg.topic.0).await;
                 if let Some(w) = worker {
-                    w.producer
-                        .send(msg.clone())
-                        .await
-                        .expect("[CONSUMER ROUTER]: Fail to send the message to worker");
+                    w.producer.send(msg.clone()).await?;
                 }
             }
         }
@@ -183,15 +163,10 @@ impl ConsumerRouter {
             (entry.producer.clone(), entry.consumer_factory.clone())
         };
 
-        let worker_id = {
-            let entry = map.get(topic).unwrap();
-            format!("{}-{}", topic, entry.workers.len())
-        };
-
         let consumer = consumer_factory.create_consumer();
 
         let worker = Arc::new(Worker::new(
-            worker_id,
+            topic.to_string(),
             consumer,
             pipeline,
             producer.clone(),

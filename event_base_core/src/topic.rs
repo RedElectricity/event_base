@@ -15,7 +15,7 @@ static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
 
 pub struct TopicRouter {
     inner: RwLock<Vec<String>>,
-    wal: RwLock<Box<dyn Wal>>,
+    wal: Arc<RwLock<Box<dyn Wal>>>,
     producer: Arc<dyn EProducer>,
 }
 
@@ -27,7 +27,10 @@ pub struct ReplaySummary {
 }
 
 impl TopicRouter {
-    pub fn init(wal: RwLock<Box<dyn Wal>>, producer: Arc<dyn EProducer>) -> Result<(), CoreError> {
+    pub fn init(
+        wal: Arc<RwLock<Box<dyn Wal>>>,
+        producer: Arc<dyn EProducer>,
+    ) -> Result<(), CoreError> {
         let router = Arc::new(TopicRouter {
             inner: RwLock::new(Vec::new()),
             producer,

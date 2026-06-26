@@ -4,13 +4,14 @@ use crate::wal::sync::WalSyncMessage;
 use crate::wal::wal::Wal;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct WalSyncHandler {
-    wal: Arc<tokio::sync::Mutex<dyn Wal>>,
+    wal: Arc<RwLock<dyn Wal>>,
 }
 
 impl WalSyncHandler {
-    pub fn new(wal: Arc<tokio::sync::Mutex<dyn Wal>>) -> Self {
+    pub fn new(wal: Arc<RwLock<dyn Wal>>) -> Self {
         Self { wal }
     }
 }
@@ -26,7 +27,7 @@ impl EHandler for WalSyncHandler {
             }
         };
 
-        let mut wal = self.wal.lock().await;
+        let mut wal = self.wal.write().await;
 
         if let Err(e) = wal.update_state(&sync.message_id, sync.status).await {
             eprintln!(
@@ -35,7 +36,9 @@ impl EHandler for WalSyncHandler {
             );
         }
 
-        wal.flush().await.unwrap();
+        if let Err(_) = wal.flush().await {
+            eprintln!("[SYSTEM] Failed to flush WAL");
+        }
 
         Ack::Ack
     }

@@ -48,7 +48,7 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
 
         #[async_trait::async_trait]
         impl event_base_core::handler::EHandler for #handler_struct_ident {
-            async fn handle(&self, msg: &event_base_core::message::EMessage) -> event_base_core::handler::Ack {
+            async fn handler(&self, msg: &event_base_core::message::EMessage) -> event_base_core::handler::Ack {
                 #fn_name(msg).await
             }
         }
@@ -59,13 +59,15 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
             register_fn: &#register_ident,
         };
 
-        #pipeline_code
+
 
         async fn #register_ident(
             shutdown_tx: event_base_core::shutdown::ShutdownSender,
         ) -> Result<(), event_base_core::error::CoreError> {
             use event_base_core::topic::TopicRouter;
             use std::sync::Arc;
+
+            #pipeline_code
 
             let handler = Arc::new(#handler_struct_ident);
             let router = TopicRouter::global();
@@ -76,7 +78,6 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
 
 
             for i in 0..#workers {
-                let worker_id = format!("{}-{}", #topic, i);
                 let shutdown_rx = shutdown_tx.subscribe();
                 let worker = cr.create_worker(
                     #topic,

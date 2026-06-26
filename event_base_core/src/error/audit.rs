@@ -4,4 +4,6 @@ pub enum AuditError {
     Write(String),
     #[error("Buffer full")]
     BufferFull,
+    #[error("Missing Span")]
+    MissingSpan,
 }

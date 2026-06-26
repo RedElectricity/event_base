@@ -1,3 +1,4 @@
+use crate::error::CoreError;
 use crate::metrics::node::NodeMetrics;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -10,6 +11,15 @@ pub struct MetricsStore {
 }
 
 impl MetricsStore {
+    pub fn init() -> Result<(), CoreError> {
+        let store: Arc<MetricsStore> = Arc::new(MetricsStore {
+            nodes: RwLock::new(HashMap::new()),
+        });
+        METRICS_STORE
+            .set(store)
+            .map_err(|_| CoreError::AlreadyInitialized)?;
+        Ok(())
+    }
     pub fn global() -> Arc<MetricsStore> {
         METRICS_STORE
             .get()

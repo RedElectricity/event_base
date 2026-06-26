@@ -1,4 +1,5 @@
 use crate::constant::SYSTEM_TOPIC_METRICS;
+use crate::error::CoreError;
 use crate::message::DeliveryMode::Standard;
 use crate::message::{EMessage, MessageTopic};
 use crate::queues::consumer_router::ConsumerRouter;
@@ -22,19 +23,18 @@ pub struct NodeMetrics {
 pub struct NodeCollector;
 
 impl NodeCollector {
-    pub async fn start(&self) {
+    pub async fn start(&self) -> Result<(), CoreError> {
         loop {
             let metrics = self.collect().await;
             let msg = EMessage::new(
-                MessageTopic(SYSTEM_TOPIC_METRICS.parse().unwrap()),
-                message::MessagePayload(serde_json::to_vec(&metrics).unwrap()),
+                MessageTopic(SYSTEM_TOPIC_METRICS.to_string()),
+                message::MessagePayload(serde_json::to_vec(&metrics)?),
                 Standard,
                 None,
             );
             TopicRouter::global()
                 .send(SYSTEM_TOPIC_METRICS, msg, None, None)
-                .await
-                .expect("[NODE METRICS COLLECTOR]Fail to send node message");
+                .await?;
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     }

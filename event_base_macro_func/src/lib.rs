@@ -5,7 +5,6 @@ pub mod start_system;
 macro_rules! send_msg {
     ($msg:expr, $try_send:expr, $time_out:expr) => {{
         use event_base_macro_func::send_msg::send_msg_impl;
-        let mut msg = $msg;
         send_msg_impl($msg, $try_send, $time_out).await
     }};
 }

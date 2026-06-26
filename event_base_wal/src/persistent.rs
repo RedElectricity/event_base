@@ -1,8 +1,7 @@
-use bincode::{Decode, Encode, config};
-use event_base_core::error::CoreError;
-use event_base_core::error::serialize::SerializeError::SerializeError;
+use bincode::{config, Decode, Encode};
 use event_base_core::error::wal::WalError;
 use event_base_core::error::wal::WalError::RecordNotFound;
+use event_base_core::error::CoreError;
 use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use event_base_core::worker_registry::WorkerInfo;
 use serde::{Deserialize, Serialize};
@@ -12,6 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::fs;
 use tokio::sync::{Mutex, RwLock};
+use event_base_core::error::serialize::SerializeError::SerializeError;
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 struct WalStore {
@@ -33,7 +33,6 @@ pub struct PersistentWal {
 impl PersistentWal {
     pub async fn new(file_path: String) -> Result<Self, CoreError> {
         if !tokio::fs::try_exists(&file_path).await.unwrap_or(false) {
-            // 文件不存在，初始化空存储
             return Ok(Self {
                 file_path,
                 records: Arc::new(Default::default()),
@@ -43,15 +42,8 @@ impl PersistentWal {
             });
         }
 
-        // 1. 安全读取文件，处理IO错误
-        let data = fs::read(&file_path).await.map_err(|e| {
-            WalError::Backend(format!(
-                "Fail to read the file: {}，path:{:?}",
-                e, file_path
-            ))
-        })?;
+        let data = fs::read(&file_path).await?;
 
-        // 2. 安全反序列化，处理二进制损坏
         let (store, _): (WalStore, _) = bincode::decode_from_slice(&data, config::standard())
             .map_err(|e| WalError::Backend(format!("Fail to decode the file:{}", e)))?;
 
@@ -107,8 +99,9 @@ impl Wal for PersistentWal {
             worker_registry: self.worker_registry.read().await.clone(),
             id_counter: *self.id_counter.clone().lock().await,
         };
-        let bytes = bincode::encode_to_vec(&store, config::standard())
-            .map_err(|e| SerializeError(e.to_string()))?;
+        let bytes = bincode::encode_to_vec(&store, config::standard()).map_err(|e| {
+            SerializeError(e.to_string())
+        })?;
         let temp_path = PathBuf::from(&self.file_path).with_extension("tmp");
         fs::write(&temp_path, bytes).await?;
         fs::rename(&temp_path, &self.file_path).await?;
