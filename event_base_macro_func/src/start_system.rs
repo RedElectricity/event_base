@@ -1,8 +1,10 @@
+use event_base_core::NodeType::Host;
 use event_base_core::constant::SYSTEM_TOPIC_WORKER_DISCOVERY;
 use event_base_core::error::CoreError;
 use event_base_core::message::DeliveryMode::Standard;
 use event_base_core::message::{EMessage, MessagePayload, MessageTopic};
-use event_base_core::queues::EProducer;
+use event_base_core::queues::consumer_router::ConsumerRouter;
+use event_base_core::queues::factory::QueueFactory;
 use event_base_core::shutdown::{ShutdownSender, shutdown_channel};
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::system_handlers::topic::TopicDiscoveryMessage;
@@ -18,25 +20,34 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 pub async fn start_system_impl(
     node_type: NodeType,
-    producer: Arc<dyn EProducer>,
+    factory: Arc<dyn QueueFactory>,
     wal: Box<dyn Wal>,
     system_builder: SystemHandlerBuilder,
 ) -> Result<ShutdownSender, CoreError> {
     set_node_type(node_type);
 
     let wal_init = RwLock::new(wal);
-    TopicRouter::init(wal_init, producer)?;
+    let global_producer = factory.create_global_producer()?;
+    TopicRouter::init(wal_init, global_producer)?;
 
     let (shutdown_tx, _) = shutdown_channel();
 
     system_builder.register_all().await?;
 
     event_base_core::registry::register_all_handlers(shutdown_tx.clone()).await?;
+
+    let cr = ConsumerRouter::global();
+    tokio::spawn(async move {
+        cr.recv().await;
+    });
+
     let router = TopicRouter::global();
+
+    let main_consumer = factory.create_main_consumer()?;
+    ConsumerRouter::init(main_consumer, factory)?;
 
     let producer = router.get_producer();
     let trace_layer = TraceLayer::new(producer);
-
     Registry::default().with(trace_layer).init();
 
     let topics_discovery_msg = EMessage::new(
@@ -61,7 +72,9 @@ pub async fn start_system_impl(
         .await
         .expect("[START UP] Failed to send topic discovery message");
 
-    tokio::spawn(TopicRouter::run_delay_scheduler());
+    if node_type == Host {
+        tokio::spawn(TopicRouter::run_delay_scheduler());
+    }
 
     Ok(shutdown_tx)
 }

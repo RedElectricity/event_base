@@ -145,12 +145,18 @@ impl ConsumerFactory for MemoryConsumerFactory {
 
 // ---------- Queue Factory ----------
 pub struct MemoryQueueFactory {
-    capacity: usize,
+    tx: Sender<EMessage>,
+    rx: Receiver<EMessage>,
 }
 
 impl MemoryQueueFactory {
     pub fn new(capacity: usize) -> Self {
-        Self { capacity }
+        let (tx, rx) = if capacity > 0 {
+            bounded(capacity)
+        } else {
+            unbounded()
+        };
+        Self { tx, rx }
     }
 }
 
@@ -160,17 +166,34 @@ impl QueueFactory for MemoryQueueFactory {
         &self,
         _topic: &str,
     ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), CoreError> {
-        let (tx, rx) = if self.capacity > 0 {
-            bounded(self.capacity)
-        } else {
-            unbounded()
-        };
-        let producer = Arc::new(MemoryProducer { tx: tx.clone() });
-        let consumer_factory = Arc::new(MemoryConsumerFactory::new(tx, rx));
+        let producer = Arc::new(MemoryProducer {
+            tx: self.tx.clone(),
+        });
+        let consumer_factory =
+            Arc::new(MemoryConsumerFactory::new(self.tx.clone(), self.rx.clone()));
         Ok((producer, consumer_factory))
+    }
+
+    fn create_global_producer(&self) -> Result<Arc<dyn EProducer>, CoreError> {
+        Ok(Arc::new(MemoryProducer {
+            tx: self.tx.clone(),
+        }))
+    }
+
+    fn create_main_consumer(&self) -> Result<Arc<Mutex<dyn EConsumer>>, CoreError> {
+        Ok(Arc::new(Mutex::new(MemoryConsumer {
+            tx: self.tx.clone(),
+            rx: self.rx.clone(),
+            len: Arc::new(Default::default()),
+            pending: Arc::new(Default::default()),
+        })))
     }
 
     fn name(&self) -> &'static str {
         "memory"
+    }
+
+    async fn health_check(&self) -> Result<(), CoreError> {
+        Ok(())
     }
 }
