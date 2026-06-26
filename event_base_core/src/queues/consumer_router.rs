@@ -67,6 +67,7 @@ impl ConsumerRouter {
             let local_workers = self.local_topics.read().await;
 
             if !local_workers.contains_key(&msg.topic.0) {
+                drop(local_workers);
                 consumer.nack(claim_id).await?;
                 continue;
             }
@@ -75,6 +76,7 @@ impl ConsumerRouter {
 
             if let Some(target) = &msg.to_worker {
                 if !workers.contains_key(target) {
+                    drop(workers);
                     consumer.nack(claim_id).await?;
                     continue;
                 }
@@ -98,6 +100,7 @@ impl ConsumerRouter {
                         }
                     }
                 } else {
+                    drop(workers);
                     consumer.nack(claim_id).await?;
                     tracing::warn!("No free worker, requeue the message: {}", &msg.id);
                     continue;
@@ -202,29 +205,31 @@ impl ConsumerRouter {
         Ok(worker.name.clone())
     }
 
-    pub async fn get_worker(&self, worker_name: &str) -> Arc<Worker> {
+    pub async fn get_worker(&self, worker_name: &str) ->Result<Arc<Worker>, CoreError> {
         let workers = self.worker_index.read().await;
-        let (worker, _) = workers.get(worker_name).unwrap();
-        worker.clone()
+        let (worker, _) = workers.get(worker_name).ok_or_else(|| {
+            return CoreError::WorkerNotFound(worker_name.to_string());
+        })?;
+        Ok(worker.clone())
     }
 
     pub async fn get_workers(&self, topic: &str) -> Vec<Arc<Worker>> {
         let entries = self.local_topics.read().await;
         let worker_map = self.worker_index.read().await;
         let mut workers = Vec::new();
-        for worker_index in entries.get(topic).unwrap().workers.clone() {
-            workers.push(worker_map.get(&worker_index).unwrap().0.clone());
+        if let Some(entry) = entries.get(topic) {
+            for worker_index in entry.workers.clone() {
+                if let Some((worker, _)) = worker_map.get(&worker_index) {
+                    workers.push(worker.clone());
+                }
+            }
         }
         workers
     }
 
     pub async fn get_all_workers(&self) -> Vec<Arc<Worker>> {
         let worker_map = self.worker_index.read().await;
-        let mut workers = Vec::new();
-        for worker_index in worker_map.keys() {
-            workers.push(worker_map.get(worker_index).unwrap().0.clone());
-        }
-        workers
+        worker_map.values().map(|(worker, _)| worker.clone()).collect()
     }
 
     pub async fn del_worker(&self, worker_name: &str) -> Result<(), CoreError> {
@@ -246,9 +251,9 @@ impl ConsumerRouter {
         let mut worker_map = self.worker_index.write().await;
         if let Some(entry) = entries.get_mut(topic) {
             for worker_index in entry.workers.clone() {
-                let (_, handle) = worker_map.get(&worker_index).unwrap();
-                handle.abort();
-                worker_map.remove(&worker_index);
+                if let Some((_, handle)) = worker_map.remove(&worker_index) {
+                    handle.abort();
+                }
             }
         }
         entries.remove(topic);

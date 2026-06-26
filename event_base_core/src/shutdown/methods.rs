@@ -3,6 +3,7 @@ use crate::queues::consumer_router::ConsumerRouter;
 use crate::worker::WorkerStatus::Idle;
 use std::time::Duration;
 use tokio::sync::broadcast;
+use tracing::error;
 
 pub async fn shutdown_all_workers_two_stage(
     shutdown_tx: broadcast::Sender<()>,
@@ -40,7 +41,7 @@ pub async fn shutdown_all_workers_two_stage(
 }
 
 pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Result<(), CoreError> {
-    let worker = ConsumerRouter::global().get_worker(worker_id).await;
+    let worker = ConsumerRouter::global().get_worker(worker_id).await?;
 
     loop {
         if worker.get_status().await == Idle {
