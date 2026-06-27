@@ -6,6 +6,7 @@ use crate::handler::Ack::{Ack, Dead, NoAck};
 use crate::message::DeliveryMode::{Repeated, Standard};
 use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::middleware::Pipeline;
+use crate::queues::consumer_router::ConsumerRouter;
 use crate::queues::{EConsumer, EProducer};
 use crate::shutdown::ShutdownReceiver;
 use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
@@ -20,7 +21,6 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{error, warn};
 use uuid::Uuid;
-use crate::queues::consumer_router::ConsumerRouter;
 
 pub struct Worker {
     pub topic: String,
@@ -350,12 +350,16 @@ impl Worker {
     }
 
     async fn set_status(&self, status: WorkerStatus) {
-        match status { 
+        match status {
             Idle => {
-                let _ = ConsumerRouter::global().set_idle(self.topic.clone(), self.name.clone()).await;
+                let _ = ConsumerRouter::global()
+                    .set_idle(self.topic.clone(), self.name.clone())
+                    .await;
             }
             Working => {
-                let _ = ConsumerRouter::global().set_working(self.topic.clone(), self.name.clone()).await;
+                let _ = ConsumerRouter::global()
+                    .set_working(self.topic.clone(), self.name.clone())
+                    .await;
             }
         };
         *self.status.lock().await = status;

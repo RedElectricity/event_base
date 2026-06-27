@@ -50,9 +50,9 @@ impl TopicRouter {
     }
 
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
-        let pending = { 
+        let pending = {
             let wal = &mut self.wal.write().await;
-            wal.replay_pending().await? 
+            wal.replay_pending().await?
         };
 
         let mut summary = ReplaySummary::default();
@@ -115,7 +115,7 @@ impl TopicRouter {
         }
 
         drop(wal);
-        
+
         if msg.delivery_mode == Broadcast {
             if get_node_type() == Arc::from(NodeType::Worker) {
                 return Err(CoreError::Unsupported(

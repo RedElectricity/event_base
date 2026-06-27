@@ -1,5 +1,5 @@
-use crate::error::topic::TopicError;
 use crate::error::CoreError;
+use crate::error::topic::TopicError;
 use crate::handler::EHandler;
 use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
@@ -82,11 +82,14 @@ impl ConsumerRouter {
                     consumer.nack(claim_id).await?;
                     continue;
                 }
-                consumer.ack(claim_id).await?;
+
                 let (worker, _) = workers.get(target).unwrap();
                 match worker.producer.send(msg.clone()).await {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        consumer.ack(claim_id).await?;
+                    }
                     Err(e) => {
+                        consumer.nack(claim_id).await?;
                         tracing::error!("Fail to dispatch message:{}", e);
                     }
                 }
@@ -96,8 +99,11 @@ impl ConsumerRouter {
                 if let Some(w) = worker {
                     consumer.ack(claim_id).await?;
                     match w.producer.send(msg.clone()).await {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            consumer.ack(claim_id).await?;
+                        }
                         Err(e) => {
+                            consumer.nack(claim_id).await?;
                             tracing::error!("Fail to dispatch message:{}", e);
                         }
                     }
@@ -136,15 +142,15 @@ impl ConsumerRouter {
         let workers = idle_workers.get(topic);
         if let Some(workers) = workers {
             if workers.is_empty() {
-                return None
+                return None;
             }
             if let Some(name) = workers.first().clone() {
                 if let Some((w, _)) = self.worker_index.read().await.get(name) {
-                    return Some(w.clone())
+                    return Some(w.clone());
                 };
-                return None
+                return None;
             };
-            return None
+            return None;
         }
         None
     }
@@ -212,7 +218,7 @@ impl ConsumerRouter {
         Ok(worker.name.clone())
     }
 
-    pub async fn get_worker(&self, worker_name: &str) ->Result<Arc<Worker>, CoreError> {
+    pub async fn get_worker(&self, worker_name: &str) -> Result<Arc<Worker>, CoreError> {
         let workers = self.worker_index.read().await;
         let (worker, _) = workers.get(worker_name).ok_or_else(|| {
             return CoreError::WorkerNotFound(worker_name.to_string());
@@ -236,7 +242,10 @@ impl ConsumerRouter {
 
     pub async fn get_all_workers(&self) -> Vec<Arc<Worker>> {
         let worker_map = self.worker_index.read().await;
-        worker_map.values().map(|(worker, _)| worker.clone()).collect()
+        worker_map
+            .values()
+            .map(|(worker, _)| worker.clone())
+            .collect()
     }
 
     pub async fn del_worker(&self, worker_name: &str) -> Result<(), CoreError> {
@@ -267,7 +276,11 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    pub(crate) async fn set_idle(&self, topic: String, worker_name: String) -> Result<(), CoreError> {
+    pub(crate) async fn set_idle(
+        &self,
+        topic: String,
+        worker_name: String,
+    ) -> Result<(), CoreError> {
         let mut idle_workers = self.idle_workers.lock().await;
         if let Some(list) = idle_workers.get_mut(&topic) {
             list.push(worker_name);
@@ -275,7 +288,11 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    pub(crate) async fn set_working(&self, topic: String,worker_name: String) -> Result<(), CoreError> {
+    pub(crate) async fn set_working(
+        &self,
+        topic: String,
+        worker_name: String,
+    ) -> Result<(), CoreError> {
         let mut idle_workers = self.idle_workers.lock().await;
         if let Some(list) = idle_workers.get_mut(&topic) {
             list.retain(|x| *x != worker_name)
