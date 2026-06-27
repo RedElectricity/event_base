@@ -6,6 +6,7 @@ use ringbuf::traits::RingBuffer;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
+use futures::future::join_all;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,10 +78,9 @@ impl AuditManager {
     pub async fn record(&self, record: AuditRecord) -> Result<(), CoreError> {
         let mut buffer = self.buffer.write().await;
         buffer.push_overwrite(record.clone());
+        drop(buffer);
 
-        for writer in &self.writers {
-            writer.write(&record).await?;
-        }
+        let _ = join_all(self.writers.iter().map(|w| w.write(&record))).await;
 
         Ok(())
     }

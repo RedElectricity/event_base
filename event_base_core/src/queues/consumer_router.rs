@@ -21,6 +21,7 @@ pub struct ConsumerRouter {
     factory: Arc<dyn QueueFactory>,
     local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic, workers_name)
     worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name, worker)
+    idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic, worker_name)
 }
 
 struct TopicEntry {
@@ -40,6 +41,7 @@ impl ConsumerRouter {
             local_topics: RwLock::new(HashMap::new()),
             worker_index: RwLock::new(HashMap::new()),
             factory,
+            idle_workers: Mutex::new(HashMap::new()),
         });
         CONSUMER_ROUTER
             .set(router)
@@ -90,7 +92,7 @@ impl ConsumerRouter {
                 }
             } else {
                 consumer.ack(claim_id).await?;
-                let worker = self.select_local_worker(&msg.topic.0).await;
+                let worker = self.select_local_idle_worker(&msg.topic.0).await;
                 if let Some(w) = worker {
                     consumer.ack(claim_id).await?;
                     match w.producer.send(msg.clone()).await {
@@ -129,15 +131,20 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    async fn select_local_worker(&self, topic: &str) -> Option<Arc<Worker>> {
-        let topics = self.local_topics.read().await;
-        let workers = &topics.get(topic)?.workers;
-        let worker_index = self.worker_index.read().await;
-        for worker_name in workers.iter() {
-            let (worker, _) = worker_index.get(worker_name)?;
-            if worker.status.lock().await.eq(&Idle) {
-                return Some(worker.clone());
+    async fn select_local_idle_worker(&self, topic: &str) -> Option<Arc<Worker>> {
+        let idle_workers = self.idle_workers.lock().await;
+        let workers = idle_workers.get(topic);
+        if let Some(workers) = workers {
+            if workers.is_empty() {
+                return None
             }
+            if let Some(name) = workers.first().clone() {
+                if let Some((w, _)) = self.worker_index.read().await.get(name) {
+                    return Some(w.clone())
+                };
+                return None
+            };
+            return None
         }
         None
     }
@@ -257,6 +264,22 @@ impl ConsumerRouter {
             }
         }
         entries.remove(topic);
+        Ok(())
+    }
+
+    pub(crate) async fn set_idle(&self, topic: String, worker_name: String) -> Result<(), CoreError> {
+        let mut idle_workers = self.idle_workers.lock().await;
+        if let Some(list) = idle_workers.get_mut(&topic) {
+            list.push(worker_name);
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn set_working(&self, topic: String,worker_name: String) -> Result<(), CoreError> {
+        let mut idle_workers = self.idle_workers.lock().await;
+        if let Some(list) = idle_workers.get_mut(&topic) {
+            list.retain(|x| *x != worker_name)
+        }
         Ok(())
     }
 }

@@ -38,7 +38,7 @@ impl WorkerRegistry {
     pub async fn init(wal: Option<Arc<RwLock<Box<dyn Wal>>>>) -> Result<(), CoreError> {
         let wr = wal
             .clone()
-            .unwrap()
+            .unwrap() // PANIC SAFETY: WAL is critical for data integrity. Failing fast is preferred.
             .read()
             .await
             .load_worker_registry()
@@ -70,6 +70,7 @@ impl WorkerRegistry {
     pub async fn unregister(&self, worker_id: &str) -> Result<(), CoreError> {
         let mut workers = self.workers.write().await;
         workers.remove(worker_id);
+        drop(workers);
         self.save_worker_registry().await?;
         Ok(())
     }
@@ -79,6 +80,7 @@ impl WorkerRegistry {
         if let Some(info) = workers.get_mut(worker_id) {
             info.last_heartbeat = SystemTime::now();
         }
+        drop(workers);
 
         self.save_worker_registry().await?;
 
@@ -119,6 +121,8 @@ impl WorkerRegistry {
         for worker_id in &stale {
             workers.remove(worker_id);
         }
+
+        drop(workers);
 
         self.save_worker_registry().await?;
 
