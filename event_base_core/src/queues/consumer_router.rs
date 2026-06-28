@@ -94,10 +94,8 @@ impl ConsumerRouter {
                     }
                 }
             } else {
-                consumer.ack(claim_id).await?;
                 let worker = self.select_local_idle_worker(&msg.topic.0).await;
                 if let Some(w) = worker {
-                    consumer.ack(claim_id).await?;
                     match w.producer.send(msg.clone()).await {
                         Ok(_) => {
                             consumer.ack(claim_id).await?;
