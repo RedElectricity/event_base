@@ -19,6 +19,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
+use tracing::error;
 
 static CONSUMER_ROUTER: OnceLock<Arc<ConsumerRouter>> = OnceLock::new();
 
@@ -94,9 +95,16 @@ impl ConsumerRouter {
     pub async fn recv(&self) -> Result<(), CoreError> {
         loop {
             let mut consumer = self.consumer.lock().await;
-            let claimed = { consumer.claim().await? };
-
-            let Some(claimed) = claimed else { continue };
+            let claimed = {
+                match consumer.claim().await {
+                    Ok(Some(claimed)) => claimed,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        error!("[CONSUMER ROUTER]Consumer claim message failed: {}", e);
+                        continue;
+                    }
+                }
+            };
 
             let msg = &claimed.message;
             let claim_id = &claimed.claim_id;
