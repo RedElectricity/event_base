@@ -1,3 +1,8 @@
+//! Topic routing and message sending with WAL persistence.
+//!
+//! The `TopicRouter` manages message delivery to topics, handles delayed messages,
+//! broadcast to workers, and recovery from the write-ahead log.
+
 use crate::error::CoreError;
 use crate::message::DeliveryMode::Broadcast;
 use crate::message::{EMessage, MessageTopic};
@@ -13,20 +18,29 @@ use tokio::sync::RwLock;
 
 static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
 
+/// Manages topic-based message routing, WAL, and producer interaction.
 pub struct TopicRouter {
     inner: RwLock<Vec<String>>,
     wal: Arc<RwLock<Box<dyn Wal>>>,
     producer: Arc<dyn EProducer>,
 }
 
+/// Summary of a replay operation.
 #[derive(Debug, Default)]
 pub struct ReplaySummary {
+    /// Number of messages successfully recovered.
     pub recovered: usize,
+    /// Number of messages that were delayed (future delivery).
     pub delayed: usize,
+    /// List of errors encountered per message ID.
     pub errors: Vec<(String, CoreError)>,
 }
 
 impl TopicRouter {
+    /// Initializes the global topic router with a WAL and a producer.
+    ///
+    /// # Errors
+    /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init(
         wal: Arc<RwLock<Box<dyn Wal>>>,
         producer: Arc<dyn EProducer>,
@@ -42,6 +56,10 @@ impl TopicRouter {
         Ok(())
     }
 
+    /// Returns a reference to the global topic router.
+    ///
+    /// # Panics
+    /// Panics if the router has not been initialized.
     pub fn global() -> Arc<TopicRouter> {
         TOPIC_ROUTER
             .get()
@@ -49,6 +67,13 @@ impl TopicRouter {
             .clone()
     }
 
+    /// Replays pending messages from the WAL, optionally filtering by topics.
+    ///
+    /// Messages with a future `deliver_at` are re-scheduled; others are sent
+    /// immediately.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if WAL operations fail.
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
         let pending = {
             let wal = &mut self.wal.write().await;
@@ -94,6 +119,14 @@ impl TopicRouter {
         Ok(summary)
     }
 
+    /// Sends a message to the given topic, with optional try-send or timeout.
+    ///
+    /// The message is first appended to the WAL. If `deliver_at` is set, it is scheduled.
+    /// For broadcast messages, it is sent to all workers registered for the topic.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if WAL append fails, producer send fails, or the node type
+    /// is invalid for broadcast.
     pub async fn send(
         &self,
         topic: &str,
@@ -151,6 +184,7 @@ impl TopicRouter {
         Ok(())
     }
 
+    /// Background task that periodically checks for ready delayed messages and sends them.
     pub async fn run_delay_scheduler() {
         let router = TopicRouter::global();
         loop {
@@ -171,11 +205,13 @@ impl TopicRouter {
         }
     }
 
+    /// Returns the list of registered topics.
     pub async fn list_topics(&self) -> Vec<String> {
         let list = self.inner.read().await;
         list.clone()
     }
 
+    /// Registers a topic (idempotent).
     pub async fn register_topic(&self, topic: &str) {
         let mut topics = self.inner.write().await;
         if !topics.contains(&topic.to_string()) {
@@ -183,6 +219,7 @@ impl TopicRouter {
         }
     }
 
+    /// Returns the underlying producer.
     pub fn get_producer(&self) -> Arc<dyn EProducer> {
         self.producer.clone()
     }

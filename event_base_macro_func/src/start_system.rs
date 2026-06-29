@@ -1,3 +1,5 @@
+//! Implementation of the system startup routine.
+
 use event_base_core::NodeType::Host;
 use event_base_core::constant::SYSTEM_TOPIC_TOPIC_DISCOVERY;
 use event_base_core::error::CoreError;
@@ -19,6 +21,35 @@ use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+/// Initializes all global components and starts the system.
+///
+/// This function is called by the `start_system!` macro. It performs the
+/// following steps:
+///
+/// 1. Sets the global node type.
+/// 2. Wraps the WAL in `Arc<RwLock<...>>` and initializes the `TopicRouter`.
+/// 3. Creates a global producer and initializes the `ConsumerRouter`.
+/// 4. Initializes the `WorkerRegistry`.
+/// 5. Creates a shutdown channel.
+/// 6. Registers all system handlers via the `SystemHandlerBuilder`.
+/// 7. Registers all user handlers via the static registry.
+/// 8. Spawns the main consumer loop.
+/// 9. Sets up the tracing layer.
+/// 10. Sends a topic discovery message to sync topics.
+/// 11. If the node type is `Host`, spawns the delay scheduler.
+///
+/// # Arguments
+/// * `node_type` – `Host` or `Worker`.
+/// * `factory` – The queue factory for creating producers/consumers.
+/// * `wal` – The WAL implementation.
+/// * `system_builder` – The pre‑configured system handler builder.
+///
+/// # Returns
+/// A `ShutdownSender` that can be used to initiate graceful shutdown.
+///
+/// # Errors
+/// Returns `CoreError` if any initialization step fails (e.g., global singletons
+/// already set, queue creation fails, etc.).
 pub async fn start_system_impl(
     node_type: NodeType,
     factory: Arc<dyn QueueFactory>,

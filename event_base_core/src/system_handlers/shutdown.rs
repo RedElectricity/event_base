@@ -1,3 +1,9 @@
+//! Handlers for shutdown commands and acknowledgments.
+//!
+//! The [`ShutdownHandler`] receives `ShutdownCommand` messages and invokes
+//! the appropriate shutdown strategy. The [`ShutdownAckHandler`] processes
+//! acknowledgment messages from workers that have completed shutdown.
+
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::shutdown::messages::{ShutdownAck, ShutdownCommand, ShutdownStrategy};
@@ -11,7 +17,12 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::error;
 
+/// Handler for shutdown command messages.
+///
+/// It deserializes a [`ShutdownCommand`] and executes the specified strategy,
+/// using the provided broadcast sender to signal workers when needed.
 pub struct ShutdownHandler {
+    /// Broadcast sender used to signal workers for two‑stage shutdown.
     pub(crate) shutdown_tx: broadcast::Sender<()>,
 }
 
@@ -69,6 +80,10 @@ impl EHandler for ShutdownHandler {
     }
 }
 
+/// Handler for shutdown acknowledgment messages.
+///
+/// It deserializes [`ShutdownAck`] and unregisters the worker from the
+/// [`WorkerRegistry`](WorkerRegistry).
 pub struct ShutdownAckHandler;
 
 #[async_trait]

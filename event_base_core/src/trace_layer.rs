@@ -1,3 +1,8 @@
+//! A tracing `Layer` that captures span and event data and sends them as messages.
+//!
+//! This layer converts tracing spans and events into `TraceRecord` structures and
+//! forwards them via the system's message bus (using the `SYSTEM_TOPIC_TRACE` topic).
+
 use crate::constant::SYSTEM_TOPIC_TRACE;
 use crate::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
 use crate::queues::EProducer;
@@ -12,11 +17,13 @@ use tracing_core::Subscriber;
 use tracing_serde::AsSerde;
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
+/// A tracing layer that emits trace records as messages.
 pub struct TraceLayer {
     producer: Arc<dyn EProducer>,
 }
 
 impl TraceLayer {
+    /// Creates a new `TraceLayer` with the given producer.
     pub fn new(producer: Arc<dyn EProducer>) -> Self {
         Self { producer }
     }
@@ -26,6 +33,8 @@ impl<S> Layer<S> for TraceLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    /// When a new span is created, it captures the span's fields and stores a `TraceRecord`
+    /// in the span's extensions.
     fn on_new_span(
         &self,
         attrs: &Attributes<'_>,
@@ -74,6 +83,7 @@ where
         extensions.insert(record);
     }
 
+    /// When a tracing event occurs, it is serialized and sent as a trace message.
     fn on_event(
         &self,
         event: &tracing::Event<'_>,
@@ -123,6 +133,8 @@ where
         let _ = self.producer.try_send(msg);
     }
 
+    /// When a span is closed, the stored `TraceRecord` is completed with finish time
+    /// and duration, then sent as a message.
     fn on_close(&self, id: Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let span = ctx.span(&id).unwrap();
         let mut extensions = span.extensions_mut();

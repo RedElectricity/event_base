@@ -1,3 +1,10 @@
+//! Builder for registering system‑level handlers.
+//!
+//! The [`SystemHandlerBuilder`] collects necessary dependencies (WAL, shutdown
+//! sender, trace collectors) and registers all built‑in system handlers to
+//! the [`ConsumerRouter`](ConsumerRouter).
+//! Registration differs between Host and Worker node types.
+
 use crate::audit::AuditManager;
 use crate::constant::{
     SYSTEM_TOPIC_AUDIT, SYSTEM_TOPIC_METRICS, SYSTEM_TOPIC_SHUTDOWN, SYSTEM_TOPIC_SHUTDOWN_ACK,
@@ -23,6 +30,13 @@ use crate::{NodeType, get_node_type};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// A builder that registers all system handlers based on node type and
+/// provided dependencies.
+///
+/// It initializes global managers (AuditManager, MetricsManager, MetricsStore),
+/// and conditionally registers handlers for audit, trace, worker discovery,
+/// heartbeat, WAL sync, shutdown, topic discovery, and topic sync. It also
+/// spawns a `NodeCollector` task to periodically publish node metrics.
 pub struct SystemHandlerBuilder {
     trace_collectors: Vec<Arc<dyn TraceCollector>>,
     wal: Arc<RwLock<dyn Wal>>,
@@ -31,6 +45,12 @@ pub struct SystemHandlerBuilder {
 }
 
 impl SystemHandlerBuilder {
+    /// Creates a new builder with required dependencies.
+    ///
+    /// # Arguments
+    /// * `wal` - The WAL instance (wrapped in `Arc<RwLock<...>>`).
+    /// * `shutdown_sender` - The broadcast sender for shutdown signals.
+    /// * `audit_buf_capacity` - Capacity of the audit ring buffer.
     pub fn new(
         wal: Arc<RwLock<dyn Wal>>,
         shutdown_sender: ShutdownSender,
@@ -44,11 +64,28 @@ impl SystemHandlerBuilder {
         }
     }
 
+    /// Adds a trace collector to the builder.
+    ///
+    /// These collectors are passed to the `SystemTraceHandler` if any are
+    /// provided.
     pub fn with_trace_collector(mut self, collector: Arc<dyn TraceCollector>) -> Self {
         self.trace_collectors.push(collector);
         self
     }
 
+    /// Registers all system handlers to the global `ConsumerRouter`.
+    ///
+    /// This method initializes the global managers and then, depending on the
+    /// node type:
+    /// - **Worker**: registers only shutdown, topic sync, and metrics handlers,
+    ///   and starts a `NodeCollector`.
+    /// - **Host**: registers audit (if writers exist), trace (if collectors exist),
+    ///   worker discovery, worker heartbeat, WAL sync, shutdown (both command and ack),
+    ///   topic discovery, topic sync, and also starts a `NodeCollector`.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if any global manager initialization fails or
+    /// if topic registration fails.
     pub async fn register_all(&self) -> Result<(), CoreError> {
         let router = ConsumerRouter::global();
         AuditManager::init(self.audit_buf_capacity)?;

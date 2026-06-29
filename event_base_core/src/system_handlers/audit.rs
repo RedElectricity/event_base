@@ -1,9 +1,21 @@
+//! Handler for audit records.
+//!
+//! The [`AuditHandler`] deserializes incoming audit messages and forwards
+//! them to the global [`AuditManager`](crate::audit::AuditManager) for storage
+//! and forwarding to configured writers.
+
 use crate::audit::{AuditManager, AuditRecord};
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use async_trait::async_trait;
 
+/// A handler that processes audit messages.
+///
+/// It deserializes the payload as an [`AuditRecord`] and feeds it into the
+/// global [`AuditManager`]. If deserialization fails, the message is simply
+/// acknowledged (to avoid blocking the system).
 pub struct AuditHandler {}
+
 #[async_trait]
 impl EHandler for AuditHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {

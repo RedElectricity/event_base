@@ -1,3 +1,7 @@
+//! Handler for WAL synchronization messages.
+//!
+//! The [`WalSyncHandler`] processes messages that update the status of a message in the WAL.
+
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::wal::sync::WalSyncMessage;
@@ -6,11 +10,16 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// A handler that applies WAL status updates.
+///
+/// It deserializes a [`WalSyncMessage`] and updates the message state in the
+/// WAL via [`Wal::update_state`], then flushes the WAL.
 pub struct WalSyncHandler {
     wal: Arc<RwLock<dyn Wal>>,
 }
 
 impl WalSyncHandler {
+    /// Creates a new handler with the given WAL instance.
     pub fn new(wal: Arc<RwLock<dyn Wal>>) -> Self {
         Self { wal }
     }

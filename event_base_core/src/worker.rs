@@ -1,3 +1,6 @@
+//! Worker implementation that consumes messages, applies a middleware pipeline,
+//! and handles acknowledgment, retries, and dead-lettering.
+
 use crate::audit::{AuditEventType, AuditRecord, AuditResult};
 use crate::constant::{SYSTEM_TOPIC_AUDIT, SYSTEM_TOPIC_SHUTDOWN_ACK};
 use crate::dead_letter::DeadReason;
@@ -22,6 +25,8 @@ use tokio::time::timeout;
 use tracing::{error, warn};
 use uuid::Uuid;
 
+/// A worker that consumes messages from a topic, processes them via a pipeline,
+/// and handles retries/dead-lettering based on the returned `Ack`.
 pub struct Worker {
     pub topic: String,
     pub name: String,
@@ -37,13 +42,20 @@ pub struct Worker {
     shutdown_complete: Arc<AtomicBool>,
 }
 
+/// Possible statuses of a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerStatus {
+    /// Not currently processing a message.
     Idle,
+    /// Actively processing a message.
     Working,
 }
 
 impl Worker {
+    /// Creates a new worker instance.
+    ///
+    /// The worker name is generated automatically from the topic and a UUID.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         topic: String,
         consumer: Box<dyn EConsumer>,
@@ -65,11 +77,16 @@ impl Worker {
             shutdown_check_interval,
             shutdown_timeout,
             shutdown_receiver: Arc::new(Mutex::new(shutdown_receiver)),
-            status: Arc::new(Mutex::new(WorkerStatus::Idle)),
+            status: Arc::new(Mutex::new(Idle)),
             wal: WalClient::new(name),
             shutdown_complete: Arc::new(AtomicBool::new(false)),
         }
     }
+
+    /// Starts the worker's main loop.
+    ///
+    /// It repeatedly receives messages, processes them, and handles the returned `Ack`.
+    /// It also monitors the shutdown receiver to perform graceful shutdown.
     pub async fn start(&self) {
         let mut shutdown_receiver = self.shutdown_receiver.lock().await;
         let mut consumer = self.consumer.lock().await;
@@ -85,7 +102,7 @@ impl Worker {
                     if let Some(msg) = msg {
                         let _ = self.process_msg(msg).await;
                     }
-                    self.set_status(WorkerStatus::Idle).await;
+                    self.set_status(Idle).await;
                 }
             }
         }
@@ -305,6 +322,13 @@ impl Worker {
         Ok(())
     }
 
+    /// Gracefully shuts down the worker.
+    ///
+    /// Waits until the worker becomes idle (or until timeout) and sends a shutdown
+    /// acknowledgment message.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if sending the ack fails.
     pub async fn shutdown(
         &self,
         check_interval: Duration,
@@ -345,6 +369,7 @@ impl Worker {
         Ok(())
     }
 
+    /// Returns `true` if the shutdown process has completed.
     pub fn is_shutdown_complete(&self) -> bool {
         self.shutdown_complete.load(Ordering::SeqCst)
     }
@@ -365,6 +390,7 @@ impl Worker {
         *self.status.lock().await = status;
     }
 
+    /// Returns the current status of the worker.
     pub async fn get_status(&self) -> WorkerStatus {
         *self.status.lock().await
     }

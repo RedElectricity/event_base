@@ -1,3 +1,10 @@
+//! Router that distributes claimed messages to local workers.
+//!
+//! The [`ConsumerRouter`] is the core dispatcher: it claims messages from the
+//! main consumer, selects an idle worker for the message's topic, and forwards
+//! the message to that worker's internal producer. It also manages worker
+//! lifecycles (creation, registration, deletion).
+
 use crate::error::CoreError;
 use crate::error::topic::TopicError;
 use crate::handler::EHandler;
@@ -7,7 +14,6 @@ use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
 use crate::shutdown::ShutdownReceiver;
 use crate::worker::Worker;
-use crate::worker::WorkerStatus::Idle;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -16,22 +22,37 @@ use tokio::task::JoinHandle;
 
 static CONSUMER_ROUTER: OnceLock<Arc<ConsumerRouter>> = OnceLock::new();
 
+/// The global router that dispatches messages to workers.
+///
+/// It maintains:
+/// - A map of topics to their associated producer, consumer factory, handler, and workers.
+/// - A map of worker names to their `Worker` instances and join handles.
+/// - A list of idle workers per topic for fast dispatch.
 pub struct ConsumerRouter {
     consumer: Arc<Mutex<dyn EConsumer>>,
     factory: Arc<dyn QueueFactory>,
-    local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic, workers_name)
-    worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name, worker)
-    idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic, worker_name)
+    local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic -> TopicEntry)
+    worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name -> (worker, handle))
+    idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic -> list of idle worker names)
 }
 
+/// Internal entry for a registered topic.
 struct TopicEntry {
     pub producer: Arc<dyn EProducer>,
     pub consumer_factory: Arc<dyn ConsumerFactory>,
     pub handler: Arc<dyn EHandler>,
-    pub workers: Vec<String>,
+    pub workers: Vec<String>, // names of workers for this topic
 }
 
 impl ConsumerRouter {
+    /// Initializes the global consumer router.
+    ///
+    /// # Arguments
+    /// * `consumer` - The main consumer (wrapped in `Mutex`) that will claim messages.
+    /// * `factory` - The queue factory used to create resources.
+    ///
+    /// # Errors
+    /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init(
         consumer: Arc<Mutex<dyn EConsumer>>,
         factory: Arc<dyn QueueFactory>,
@@ -49,6 +70,10 @@ impl ConsumerRouter {
         Ok(())
     }
 
+    /// Returns a reference to the global consumer router.
+    ///
+    /// # Panics
+    /// Panics if the router has not been initialized.
     pub fn global() -> Arc<ConsumerRouter> {
         CONSUMER_ROUTER
             .get()
@@ -56,6 +81,16 @@ impl ConsumerRouter {
             .clone()
     }
 
+    /// The main dispatch loop.
+    ///
+    /// It continuously claims messages from the main consumer. For each claimed
+    /// message, it determines the target worker based on the `to_worker` field
+    /// or by selecting an idle worker for the topic. It then forwards the message
+    /// to the worker's producer and acknowledges the claim. If no worker is
+    /// available, the message is negatively acknowledged and requeued.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if the consumer operation fails unexpectedly.
     pub async fn recv(&self) -> Result<(), CoreError> {
         loop {
             let mut consumer = self.consumer.lock().await;
@@ -115,6 +150,13 @@ impl ConsumerRouter {
         }
     }
 
+    /// Registers a topic with its handler.
+    ///
+    /// This creates a queue for the topic via the factory and stores the producer,
+    /// consumer factory, and handler for future worker creation.
+    ///
+    /// # Errors
+    /// Returns `CoreError::TopicAlreadyExists` if the topic is already registered.
     pub async fn register(&self, topic: &str, handler: Arc<dyn EHandler>) -> Result<(), CoreError> {
         let (producer, consumer_factory) = self.factory.create_queue(topic)?;
         let mut map = self.local_topics.write().await;
@@ -135,6 +177,9 @@ impl ConsumerRouter {
         Ok(())
     }
 
+    /// Selects an idle worker for the given topic.
+    ///
+    /// Returns the first idle worker, or `None` if none are available.
     async fn select_local_idle_worker(&self, topic: &str) -> Option<Arc<Worker>> {
         let idle_workers = self.idle_workers.lock().await;
         let workers = idle_workers.get(topic);
@@ -153,11 +198,18 @@ impl ConsumerRouter {
         None
     }
 
+    /// Returns the handler registered for the given topic.
     pub async fn get_handler(&self, topic: &str) -> Option<Arc<dyn EHandler>> {
         let map = self.local_topics.read().await;
         map.get(topic).map(|e| e.handler.clone())
     }
 
+    /// Registers a worker for a topic.
+    ///
+    /// Adds the worker to the topic's worker list and to the global worker index.
+    ///
+    /// # Errors
+    /// Returns `CoreError::TopicNotFound` if the topic is not registered.
     pub async fn register_worker(
         &self,
         topic: &str,
@@ -175,6 +227,24 @@ impl ConsumerRouter {
         }
     }
 
+    /// Creates a new worker for the given topic.
+    ///
+    /// It instantiates a `Worker` with the provided pipeline and shutdown settings,
+    /// spawns its task, and registers it.
+    ///
+    /// # Arguments
+    /// * `topic` - The topic to consume from.
+    /// * `pipeline` - The processing pipeline (middleware + handler).
+    /// * `timeout` - Optional per‑message processing timeout.
+    /// * `shutdown_timeout` - Optional timeout for graceful shutdown.
+    /// * `shutdown_check_interval` - Interval to check for idle status during shutdown.
+    /// * `shutdown_rx` - Receiver for shutdown signals.
+    ///
+    /// # Returns
+    /// The name of the created worker.
+    ///
+    /// # Errors
+    /// Returns `CoreError::TopicNotFound` if the topic is not registered.
     pub async fn create_worker(
         &self,
         topic: &str,
@@ -216,6 +286,10 @@ impl ConsumerRouter {
         Ok(worker.name.clone())
     }
 
+    /// Retrieves a worker by its name.
+    ///
+    /// # Errors
+    /// Returns `CoreError::WorkerNotFound` if the worker does not exist.
     pub async fn get_worker(&self, worker_name: &str) -> Result<Arc<Worker>, CoreError> {
         let workers = self.worker_index.read().await;
         let (worker, _) = workers.get(worker_name).ok_or_else(|| {
@@ -224,6 +298,7 @@ impl ConsumerRouter {
         Ok(worker.clone())
     }
 
+    /// Returns all workers for a given topic.
     pub async fn get_workers(&self, topic: &str) -> Vec<Arc<Worker>> {
         let entries = self.local_topics.read().await;
         let worker_map = self.worker_index.read().await;
@@ -238,6 +313,7 @@ impl ConsumerRouter {
         workers
     }
 
+    /// Returns all workers known to the router.
     pub async fn get_all_workers(&self) -> Vec<Arc<Worker>> {
         let worker_map = self.worker_index.read().await;
         worker_map
@@ -246,6 +322,12 @@ impl ConsumerRouter {
             .collect()
     }
 
+    /// Deletes a worker by its name.
+    ///
+    /// The worker's task is aborted, and it is removed from all topic lists.
+    ///
+    /// # Errors
+    /// Returns `CoreError::WorkerNotFound` if the worker does not exist.
     pub async fn del_worker(&self, worker_name: &str) -> Result<(), CoreError> {
         let mut workers = self.worker_index.write().await;
         if let Some((_worker, handle)) = workers.remove(worker_name) {
@@ -260,6 +342,12 @@ impl ConsumerRouter {
         }
     }
 
+    /// Deletes all workers for a given topic and removes the topic registration.
+    ///
+    /// All worker tasks are aborted, and the topic entry is removed.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if the topic does not exist or worker operations fail.
     pub async fn del_workers(&self, topic: &str) -> Result<(), CoreError> {
         let mut entries = self.local_topics.write().await;
         let mut worker_map = self.worker_index.write().await;
@@ -274,6 +362,9 @@ impl ConsumerRouter {
         Ok(())
     }
 
+    /// Marks a worker as idle for its topic (used internally).
+    ///
+    /// This adds the worker to the idle list so it can be selected for dispatch.
     pub(crate) async fn set_idle(
         &self,
         topic: String,
@@ -286,6 +377,7 @@ impl ConsumerRouter {
         Ok(())
     }
 
+    /// Marks a worker as working (removes it from the idle list).
     pub(crate) async fn set_working(
         &self,
         topic: String,

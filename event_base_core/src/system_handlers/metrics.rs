@@ -1,9 +1,19 @@
+//! Handler for node metrics.
+//!
+//! The [`MetricsHandler`] processes incoming metrics messages, deserializes
+//! them as [`NodeMetrics`](crate::metrics::node::NodeMetrics), and stores them
+//! in the global [`MetricsStore`](crate::metrics::node_store::MetricsStore).
+
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::metrics::node::NodeMetrics;
 use crate::metrics::node_store::MetricsStore;
 use async_trait::async_trait;
 
+/// A handler that stores node metrics.
+///
+/// It deserializes the payload as [`NodeMetrics`] and updates the global store.
+/// If deserialization fails, the message is acknowledged and the error is logged.
 pub struct MetricsHandler {}
 
 #[async_trait]

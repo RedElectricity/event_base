@@ -1,3 +1,9 @@
+//! Handlers for worker discovery and heartbeat messages.
+//!
+//! The [`WorkerDiscoveryHandler`] processes worker registration messages and
+//! adds them to the [`WorkerRegistry`](WorkerRegistry).
+//! The [`WorkerHeartbeatHandler`] updates the last heartbeat timestamp of a worker.
+
 use crate::handler::{Ack, EHandler};
 use crate::message::EMessage;
 use crate::worker_registry::{
@@ -5,6 +11,10 @@ use crate::worker_registry::{
 };
 use std::time::SystemTime;
 
+/// Handler for worker discovery (registration) messages.
+///
+/// It deserializes a [`WorkerDiscoveryMessage`] and registers the worker in
+/// the global [`WorkerRegistry`].
 pub struct WorkerDiscoveryHandler {}
 
 #[async_trait::async_trait]
@@ -34,6 +44,10 @@ impl EHandler for WorkerDiscoveryHandler {
     }
 }
 
+/// Handler for worker heartbeat messages.
+///
+/// It deserializes a [`WorkerHeartbeatMessage`] and updates the heartbeat
+/// timestamp of the corresponding worker in the [`WorkerRegistry`].
 pub struct WorkerHeartbeatHandler {}
 
 #[async_trait::async_trait]

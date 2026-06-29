@@ -1,3 +1,9 @@
+//! Handlers for topic discovery and synchronization.
+//!
+//! The [`TopicDiscovery`] handler responds to discovery requests by sending
+//! the current list of topics back to the requester. The [`TopicSync`] handler
+//! synchronizes a worker's topic list with the host's list.
+
 use crate::NodeType::Host;
 use crate::constant::SYSTEM_TOPIC_TOPIC_SYNC;
 use crate::get_node_type;
@@ -9,16 +15,24 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Message sent by a worker to discover topics from the host.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicDiscoveryMessage {
+    /// The list of topics the sender already knows about.
     pub has_topics: Vec<String>,
 }
 
+/// Message used to synchronize the full topic list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicSyncMessage {
+    /// The full list of topics to sync.
     pub topics: Vec<String>,
 }
 
+/// Handler for topic discovery requests.
+///
+/// It receives a `TopicDiscoveryMessage`, merges any new topics into the local
+/// router, and responds with a `TopicSyncMessage` containing the full topic list.
 pub struct TopicDiscovery {}
 
 #[async_trait]
@@ -64,6 +78,11 @@ impl EHandler for TopicDiscovery {
     }
 }
 
+/// Handler for topic synchronization.
+///
+/// On a worker node, it receives a `TopicSyncMessage` and registers any topics
+/// that are not already present in the local router. On a host node, it does
+/// nothing.
 pub struct TopicSync {}
 
 #[async_trait]
