@@ -23,3 +23,6 @@ target
 rustc-ice-*.txt
 
 .idea/
+
+# Rubbish
+**/.DS_Store
