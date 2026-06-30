@@ -5,34 +5,30 @@ use event_base_core::message::EMessage;
 use event_base_core::queues::consumer_factory::ConsumerFactory;
 use event_base_core::queues::factory::QueueFactory;
 use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
-use flume::{Receiver, Sender, bounded, unbounded};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
+use tokio_mpmc::{channel, Receiver, Sender};
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct MemoryProducer {
+pub struct MpmcProducer {
     tx: Sender<EMessage>,
 }
 
-pub struct MemoryConsumer {
+pub struct MpmcConsumer {
     tx: Sender<EMessage>, // for NoAck msg
     rx: Receiver<EMessage>,
     pending: Arc<Mutex<HashMap<String, EMessage>>>,
 }
 
 // Left for test use
-pub fn memory_queue(capacity: usize) -> (MemoryProducer, MemoryConsumer) {
-    let (tx, rx) = if capacity > 0 {
-        bounded(capacity)
-    } else {
-        unbounded()
-    };
+pub fn memory_queue(capacity: usize) -> (MpmcProducer, MpmcConsumer) {
+    let (tx, rx) = channel(capacity);
     (
-        MemoryProducer { tx: tx.clone() },
-        MemoryConsumer {
+        MpmcProducer { tx: tx.clone() },
+        MpmcConsumer {
             tx,
             rx,
             pending: Arc::new(Mutex::new(HashMap::default())),
@@ -41,17 +37,20 @@ pub fn memory_queue(capacity: usize) -> (MemoryProducer, MemoryConsumer) {
 }
 
 #[async_trait]
-impl EProducer for MemoryProducer {
+impl EProducer for MpmcProducer {
     async fn send(&self, e: EMessage) -> Result<(), CoreError> {
-        if let Err(e) = self.tx.send(e) {
+        if let Err(e) = self.tx.send(e).await {
             return Err(CoreError::from(QueueError::Send(e.to_string())));
         }
         Ok(())
     }
 
-    fn try_send(&self, msg: EMessage) -> Result<(), CoreError> {
-        if let Err(_e) = self.tx.try_send(msg) {
-            return Err(CoreError::from(QueueError::Full));
+    async fn try_send(&self, msg: EMessage) -> Result<(), CoreError> {
+        if self.tx.is_full() {
+            return Err(QueueError::Full.into());
+        }
+        if let Err(e) = self.tx.send(msg).await {
+            return Err(CoreError::from(QueueError::Send(e.to_string())));
         }
         Ok(())
     }
@@ -67,9 +66,9 @@ impl EProducer for MemoryProducer {
 }
 
 #[async_trait]
-impl EConsumer for MemoryConsumer {
+impl EConsumer for MpmcConsumer {
     async fn receive(&mut self) -> Option<EMessage> {
-        let msg = self.rx.recv_async().await;
+        let msg = self.rx.recv().await;
         if let Ok(msg) = msg {
             return Option::from(msg);
         }
@@ -77,8 +76,9 @@ impl EConsumer for MemoryConsumer {
     }
 
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError> {
-        let msg = match self.rx.recv_async().await {
-            Ok(m) => m,
+        let msg = match self.rx.recv().await {
+            Ok(Some(m)) => m,
+            Ok(None) => { return Ok(None); },
             Err(_) => return Ok(None),
         };
 
@@ -100,7 +100,7 @@ impl EConsumer for MemoryConsumer {
 
     async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError> {
         let mut pending = self.pending.lock().await;
-        if let Err(e) = self.tx.send(pending.get(claim_id).unwrap().clone()) {
+        if let Err(e) = self.tx.send(pending.get(claim_id).unwrap().clone()).await {
             return Err(CoreError::from(QueueError::Send(e.to_string())));
         }
         pending.remove(claim_id);
@@ -122,7 +122,7 @@ impl MemoryConsumerFactory {
 #[async_trait]
 impl ConsumerFactory for MemoryConsumerFactory {
     fn create_consumer(&self) -> Box<dyn EConsumer> {
-        Box::new(MemoryConsumer {
+        Box::new(MpmcConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
             pending: Arc::new(Mutex::new(HashMap::default())),
@@ -145,11 +145,7 @@ pub struct MemoryQueueFactory {
 
 impl MemoryQueueFactory {
     pub fn new(capacity: usize) -> Self {
-        let (tx, rx) = if capacity > 0 {
-            bounded(capacity)
-        } else {
-            unbounded()
-        };
+        let (tx, rx) = channel(capacity);
         Self { tx, rx }
     }
 }
@@ -160,7 +156,7 @@ impl QueueFactory for MemoryQueueFactory {
         &self,
         _topic: &str,
     ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), CoreError> {
-        let producer = Arc::new(MemoryProducer {
+        let producer = Arc::new(MpmcProducer {
             tx: self.tx.clone(),
         });
         let consumer_factory =
@@ -169,13 +165,13 @@ impl QueueFactory for MemoryQueueFactory {
     }
 
     fn create_global_producer(&self) -> Result<Arc<dyn EProducer>, CoreError> {
-        Ok(Arc::new(MemoryProducer {
+        Ok(Arc::new(MpmcProducer {
             tx: self.tx.clone(),
         }))
     }
 
     fn create_main_consumer(&self) -> Result<Arc<Mutex<dyn EConsumer>>, CoreError> {
-        Ok(Arc::new(Mutex::new(MemoryConsumer {
+        Ok(Arc::new(Mutex::new(MpmcConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
             pending: Arc::new(Default::default()),

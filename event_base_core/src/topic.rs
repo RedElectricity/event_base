@@ -161,7 +161,7 @@ impl TopicRouter {
                 copy.id = format!("{}-{}", msg.id, worker_index.worker_name.clone());
                 copy.to_worker = Option::from(worker_index.worker_name.clone());
                 if try_send.unwrap_or(false) {
-                    self.producer.try_send(copy.clone())?;
+                    self.producer.try_send(copy.clone()).await?;
                 } else if let Some(to) = timeout {
                     self.producer.send_timeout(copy.clone(), to).await?;
                 } else {
@@ -175,7 +175,7 @@ impl TopicRouter {
         msg.topic = MessageTopic(topic.to_string());
 
         if try_send.unwrap_or(false) {
-            self.producer.try_send(msg.clone())?;
+            self.producer.try_send(msg.clone()).await?;
         } else if let Some(to) = timeout {
             self.producer.send_timeout(msg.clone(), to).await?;
         } else {

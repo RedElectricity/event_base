@@ -33,7 +33,7 @@ pub trait EProducer: Send + Sync {
     /// # Errors
     /// Returns `CoreError` if the queue is full or the operation cannot be performed
     /// without blocking.
-    fn try_send(&self, msg: EMessage) -> Result<(), CoreError>;
+    async fn try_send(&self, msg: EMessage) -> Result<(), CoreError>;
 
     /// Sends a message with a timeout.
     ///

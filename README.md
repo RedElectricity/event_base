@@ -45,7 +45,8 @@ event_base is not a distributed message queue. It does not transport data betwee
 
 - [API Reference](TODO)
 - [Architecture Guide](TODO)
-- [Examples](TODO)
+- [Template - Normal](TODO)
+- [Template - Slint](TODO)
 
 ## 🧩 Templates
 

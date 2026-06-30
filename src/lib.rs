@@ -15,7 +15,9 @@ pub use event_base_grpc as grpc;
 pub use event_base_middleware as middleware;
 
 #[cfg(feature = "memory")]
-pub use event_base_queue::memory as memory_queue;
+pub use event_base_queue::flume as flume;
+pub use event_base_queue::mpmc as mpmc;
+
 #[cfg(feature = "memory")]
 pub use event_base_wal::memory as memory_wal;
 
