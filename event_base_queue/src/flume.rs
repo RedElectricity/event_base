@@ -100,11 +100,14 @@ impl EConsumer for MemoryConsumer {
 
     async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError> {
         let mut pending = self.pending.lock().await;
-        if let Err(e) = self.tx.send(pending.get(claim_id).unwrap().clone()) {
-            return Err(CoreError::from(QueueError::Send(e.to_string())));
+        if let Some(msg) = pending.get(claim_id) {
+            if let Err(e) = self.tx.send(msg.clone()) {
+                return Err(CoreError::from(QueueError::Send(e.to_string())));
+            }
+            pending.remove(claim_id);
+            return  Ok(())
         }
-        pending.remove(claim_id);
-        Ok(())
+        Err(QueueError::InvalidClaimId(claim_id.to_string()).into())
     }
 }
 
