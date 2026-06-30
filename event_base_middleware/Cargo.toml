@@ -11,5 +11,5 @@ documentation = "https://docs.rs/event_base"
 
 [dependencies]
 async-trait = "0.1.89"
-event_base_core = { path = "../event_base_core" ,version = "*"}
+event_base_core = "*"
 tracing = "0.1.44"

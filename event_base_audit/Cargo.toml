@@ -10,6 +10,6 @@ homepage = "https://github.com/RedElectricity/event_base"
 documentation = "https://docs.rs/event_base"
 
 [dependencies]
-event_base_core = { path = "../event_base_core" ,version = "*" }
+event_base_core = "*"
 async-trait = "0.1.89"
 chrono = "0.4.45"
