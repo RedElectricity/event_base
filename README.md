@@ -4,6 +4,9 @@
 >
 > **A type-safe, macro-driven event-driven framework for Rust applications.**
 
+[![Crates.io](https://img.shields.io/crates/v/event_base)](https://crates.io/crates/event_base)
+[![docs.rs](https://img.shields.io/docsrs/event_base)](https://docs.rs/event_base)
+
 **What it is:**
 `event_base` is a lightweight, macro-driven event-driven framework for building reliable, observable, and scalable applications in Rust. With `event_base`, you declare handlers, chain middleware, and define reliable workflows—all at compile time.
 
