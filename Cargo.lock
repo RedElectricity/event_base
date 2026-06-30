@@ -257,7 +257,7 @@ name = "event_base"
 version = "0.1.0"
 dependencies = [
  "event_base_audit",
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_grpc",
  "event_base_macro_attr",
  "event_base_macro_func",
@@ -272,7 +272,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -297,10 +297,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "event_base_core"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "952e5ff20e7632f195488b3717c350f31962a77e17c300f4a1b6f57816d05016"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "futures",
+ "linkme",
+ "ringbuf",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-serde",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "event_base_grpc"
 version = "0.1.0"
 dependencies = [
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost",
  "serde_json",
  "tonic",
@@ -321,7 +344,7 @@ dependencies = [
 name = "event_base_macro_func"
 version = "0.1.0"
 dependencies = [
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
  "tokio",
  "tracing-subscriber",
@@ -332,7 +355,7 @@ name = "event_base_middleware"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing",
 ]
 
@@ -341,7 +364,7 @@ name = "event_base_queue"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "flume",
  "tokio",
  "tokio-mpmc",
@@ -358,7 +381,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bincode",
- "event_base_core",
+ "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "tokio",
 ]

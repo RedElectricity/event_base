@@ -13,7 +13,7 @@ documentation = "https://docs.rs/event_base"
 prost = "0.14.4"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
-event_base_core = "*"
+event_base_core = "1.0.0"
 serde_json = "1.0.150"
 
 [build-dependencies]
