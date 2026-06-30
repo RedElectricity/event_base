@@ -2,6 +2,12 @@
 name = "event_base_queue"
 version = "0.1.0"
 edition = "2024"
+authors = ["RedElectricity <redelectricity@outlook.com>"]
+description = "An Event Driven Framework - Queue Crate"
+license = "BSD-3-Clause"
+repository = "https://github.com/RedElectricity/event_base"
+homepage = "https://github.com/RedElectricity/event_base"
+documentation = "https://docs.rs/event_base"
 
 [dependencies]
 event_base_core = { path = "../event_base_core" }

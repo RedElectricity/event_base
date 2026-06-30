@@ -2,6 +2,12 @@
 name = "event_base_grpc"
 version = "0.1.0"
 edition = "2024"
+authors = ["RedElectricity <redelectricity@outlook.com>"]
+description = "An Event Driven Framework - gRPC API Crate"
+license = "BSD-3-Clause"
+repository = "https://github.com/RedElectricity/event_base/event_base_grpc"
+homepage = "https://github.com/RedElectricity/event_base/event_base_grpc"
+documentation = "https://docs.rs/event_base"
 
 [dependencies]
 prost = "0.14.4"
