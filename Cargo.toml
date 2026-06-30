@@ -12,13 +12,13 @@ documentation = "https://docs.rs/event_base"
 
 [dependencies]
 event_base_core = "1.0.0"
-event_base_audit = "0.1.0"
-event_base_grpc = "0.1.0"
-event_base_macro_attr = "0.1.0"
-event_base_macro_func = "0.1.0"
-event_base_middleware = "0.1.0"
-event_base_queue = "0.1.0"
-event_base_wal = "0.1.0"
+event_base_audit = {path = "event_base_audit"}
+event_base_grpc = {path = "event_base_grpc"}
+event_base_macro_attr = {path = "event_base_macro_attr"}
+event_base_macro_func = {path = "event_base_macro_func"}
+event_base_middleware = {path = "event_base_middleware"}
+event_base_queue = {path = "event_base_queue"}
+event_base_wal = {path = "event_base_wal"}
 
 [workspace]
 members = ["event_base_core",

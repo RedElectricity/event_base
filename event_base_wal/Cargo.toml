@@ -11,7 +11,7 @@ documentation = "https://docs.rs/event_base"
 
 [dependencies]
 async-trait = "0.1.89"
-event_base_core = "*"
+event_base_core = "1.0.0"
 tokio = { version = "1.52.3", features = ["full"] }
 bincode = "2"
 serde = { version = "1.0.228", features = ["derive"] }
