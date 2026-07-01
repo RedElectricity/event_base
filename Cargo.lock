@@ -394,7 +394,7 @@ dependencies = [
  "event_base_macro_func 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_queue 0.1.0",
- "event_base_wal 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_wal 0.1.0",
 ]
 
 [[package]]
@@ -583,23 +583,12 @@ dependencies = [
  "criterion",
  "event_base_core 1.0.1",
  "event_base_queue 0.1.3",
- "event_base_wal 0.1.0",
+ "event_base_wal 0.1.1",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "event_base_wal"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bincode",
- "event_base_core 1.0.1",
- "serde",
- "tokio",
 ]
 
 [[package]]
@@ -611,6 +600,17 @@ dependencies = [
  "async-trait",
  "bincode",
  "event_base_core 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "event_base_wal"
+version = "0.1.1"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "event_base_core 1.0.1",
  "serde",
  "tokio",
 ]
