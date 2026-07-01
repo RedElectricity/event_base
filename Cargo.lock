@@ -390,7 +390,7 @@ dependencies = [
  "event_base_audit 0.1.0",
  "event_base_core 1.0.0",
  "event_base_grpc 0.1.0",
- "event_base_macro_attr 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_macro_attr 0.1.0",
  "event_base_macro_func 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_queue 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -490,6 +490,8 @@ dependencies = [
 [[package]]
 name = "event_base_macro_attr"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01b7ef027889c2e7d782a0c32306b29afa7a9af7f2742329ead3ef9fa9eca205"
 dependencies = [
  "darling",
  "quote",
@@ -498,9 +500,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_attr"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01b7ef027889c2e7d782a0c32306b29afa7a9af7f2742329ead3ef9fa9eca205"
+version = "0.1.1"
 dependencies = [
  "darling",
  "quote",
