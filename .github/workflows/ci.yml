@@ -15,7 +15,7 @@ env:
 jobs:
   # ──────── Format & Lint ────────
   check:
-    name: Check (fmt + clippy)
+    name: Check (clippy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,9 @@ jobs:
           rustup set profile minimal
           rustup toolchain install stable --component rustfmt --component clippy
           rustup default stable
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
