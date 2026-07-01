@@ -568,7 +568,7 @@ name = "event_base_queue"
 version = "0.1.2"
 dependencies = [
  "async-trait",
- "event_base_core 1.0.1",
+ "event_base_core 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "flume",
  "tokio",
  "tokio-mpmc",
