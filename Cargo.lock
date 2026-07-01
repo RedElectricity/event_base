@@ -389,7 +389,7 @@ version = "0.1.1"
 dependencies = [
  "event_base_audit 0.1.0",
  "event_base_core 1.0.0",
- "event_base_grpc 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_grpc 0.1.0",
  "event_base_macro_attr 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_macro_func 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -464,6 +464,8 @@ dependencies = [
 [[package]]
 name = "event_base_grpc"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7df1a969452782383f682268fb933505a48721a5370ec8fe714b8af239364a3"
 dependencies = [
  "event_base_core 1.0.0",
  "prost",
@@ -475,9 +477,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_grpc"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7df1a969452782383f682268fb933505a48721a5370ec8fe714b8af239364a3"
+version = "0.1.1"
 dependencies = [
  "event_base_core 1.0.0",
  "prost",
