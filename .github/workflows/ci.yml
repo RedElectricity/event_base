@@ -28,7 +28,6 @@ jobs:
           sudo apt update
           sudo apt install -y protobuf-compiler
 
-
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -59,7 +58,6 @@ jobs:
           sudo apt update
           sudo apt install -y protobuf-compiler
 
-
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -85,6 +83,7 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+
 
       - name: cargo bench
         run: cargo bench --all-features --workspace
@@ -120,7 +119,6 @@ jobs:
           rustup default stable
           sudo apt update
           sudo apt install -y protobuf-compiler
-
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
