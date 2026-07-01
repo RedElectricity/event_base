@@ -56,6 +56,9 @@ jobs:
           rustup set profile minimal
           rustup toolchain install stable
           rustup default stable
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -76,6 +79,9 @@ jobs:
           rustup set profile minimal
           rustup toolchain install stable
           rustup default stable
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -112,6 +118,9 @@ jobs:
           rustup set profile minimal
           rustup toolchain install stable
           rustup default stable
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
