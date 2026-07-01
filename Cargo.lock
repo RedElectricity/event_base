@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_queue"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "event_base_core 1.0.1",
@@ -582,7 +582,7 @@ dependencies = [
  "async-trait",
  "criterion",
  "event_base_core 1.0.1",
- "event_base_queue 0.1.1",
+ "event_base_queue 0.1.2",
  "event_base_wal 0.1.0",
  "serde_json",
  "tempfile",
