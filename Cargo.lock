@@ -393,7 +393,7 @@ dependencies = [
  "event_base_macro_attr 0.1.0",
  "event_base_macro_func 0.1.0",
  "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_queue 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_queue 0.1.0",
  "event_base_wal 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -552,9 +552,11 @@ dependencies = [
 [[package]]
 name = "event_base_queue"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e616f8240eccafa88212b5bd53da79aeb40528b11a68b08e258d1157e2d2c4a5"
 dependencies = [
  "async-trait",
- "event_base_core 1.0.1",
+ "event_base_core 1.0.0",
  "flume",
  "tokio",
  "tokio-mpmc",
@@ -563,12 +565,10 @@ dependencies = [
 
 [[package]]
 name = "event_base_queue"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e616f8240eccafa88212b5bd53da79aeb40528b11a68b08e258d1157e2d2c4a5"
+version = "0.1.1"
 dependencies = [
  "async-trait",
- "event_base_core 1.0.0",
+ "event_base_core 1.0.1",
  "flume",
  "tokio",
  "tokio-mpmc",
@@ -582,7 +582,7 @@ dependencies = [
  "async-trait",
  "criterion",
  "event_base_core 1.0.1",
- "event_base_queue 0.1.0",
+ "event_base_queue 0.1.1",
  "event_base_wal 0.1.0",
  "serde_json",
  "tempfile",
