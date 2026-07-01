@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
-use tokio_mpmc::{channel, Receiver, Sender};
+use tokio_mpmc::{Receiver, Sender, channel};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -56,12 +56,10 @@ impl EProducer for MpmcProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        let result = tokio::time::timeout(timeout, self.send(msg)).await;
-
-        if result.is_err() {
-            return Err(CoreError::from(QueueError::Timeout));
+        match tokio::time::timeout(timeout, self.send(msg)).await {
+            Err(_elapsed) => Err(CoreError::from(QueueError::Timeout)),
+            Ok(inner) => inner,
         }
-        Ok(())
     }
 }
 
@@ -78,7 +76,9 @@ impl EConsumer for MpmcConsumer {
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError> {
         let msg = match self.rx.recv().await {
             Ok(Some(m)) => m,
-            Ok(None) => { return Ok(None); },
+            Ok(None) => {
+                return Ok(None);
+            }
             Err(_) => return Ok(None),
         };
 
@@ -105,7 +105,7 @@ impl EConsumer for MpmcConsumer {
                 return Err(CoreError::from(QueueError::Send(e.to_string())));
             }
             pending.remove(claim_id);
-            return  Ok(())
+            return Ok(());
         }
         Err(QueueError::InvalidClaimId(claim_id.to_string()).into())
     }

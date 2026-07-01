@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 // Re‑export public submodules.
 pub mod audit;
@@ -24,8 +24,8 @@ pub mod worker_registry;
 
 /// Global node name (set once at startup).
 static NODE_NAME: OnceLock<Arc<String>> = OnceLock::new();
-/// Global node type (set once at startup).
-static NODE_TYPE: OnceLock<Arc<NodeType>> = OnceLock::new();
+/// Global node type (can be changed during tests).
+static NODE_TYPE: RwLock<Option<Arc<NodeType>>> = RwLock::new(None);
 
 /// The role of a node in the system.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -63,15 +63,12 @@ pub fn get_node_name() -> String {
 
 /// Sets the global node type.
 ///
-/// This must be called once during application startup. It will panic if called
-/// more than once.
+/// Can be called multiple times (e.g., in tests) to change the node type.
 ///
 /// # Arguments
 /// * `node_type` - The role of this node (`Host` or `Worker`).
 pub fn set_node_type(node_type: NodeType) {
-    NODE_TYPE
-        .set(Arc::new(node_type))
-        .expect("Node type already set");
+    *NODE_TYPE.write().expect("NODE_TYPE poisoned") = Some(Arc::new(node_type));
 }
 
 /// Returns the global node type.
@@ -79,5 +76,10 @@ pub fn set_node_type(node_type: NodeType) {
 /// # Panics
 /// Panics if [`set_node_type`] has not been called before this function is invoked.
 pub fn get_node_type() -> Arc<NodeType> {
-    NODE_TYPE.get().expect("Node type not initialized").clone()
+    NODE_TYPE
+        .read()
+        .expect("NODE_TYPE poisoned")
+        .as_ref()
+        .expect("Node type not initialized")
+        .clone()
 }

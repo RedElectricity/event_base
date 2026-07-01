@@ -1,25 +1,78 @@
 # EventBase
 
-> <div style="text-align: center;">Stop wiring channels. Start orchestrating events.</div>
->
-> **A type-safe, macro-driven event-driven framework for Rust applications.**
+> **An application-level event-driven framework for Rust — type-safe, macro-driven, and built for reliability.**
 
-**What it is:**
-`event_base` is a lightweight, macro-driven event-driven framework for building reliable, observable, and scalable applications in Rust. With `event_base`, you declare handlers, chain middleware, and define reliable workflows—all at compile time.
+`event_base` is a lightweight, macro-driven event-driven framework for building reliable, observable, and scalable applications in Rust. You declare handlers, chain middleware, and define reliable workflows — all at compile time.
 
-**What it is not:**
-event_base is not a distributed message queue. It does not transport data between services. I`event_base` focuses on **orchestrating events inside your application**: defining events, declaring handlers, managing state, and ensuring reliability.
+It is **not** a distributed message queue. It focuses on **in-process event orchestration** with persistence, observability, and graceful shutdown built in.
 
-## ✨ Features
+---
 
-- **🔒 Type-safe events** — Define events as plain Rust structs. The compiler guarantees correctness.
-- **🔌 Pluggable backends** — `memory` (flume), `file`, `redis`, `kafka`, `mqtt`. Swap without changing your handlers.
-- **⚡ Macro-driven DX** — `#[handler]` turns any async function into a message handler. No boilerplate.
-- **📦 Multiple delivery modes** — Standard (competing consumers), Broadcast (all workers), and Repeated (N times).
-- **💾 Application-level WAL** — Durable persistence with crash recovery. Your events survive restarts.
-- **🔄 Automatic retry & Dead Letter Queue** — Failed messages retry with configurable backoff, then land in DLQ.
-- **📊 Built-in observability** — Audit logging (`_system.audit`) and distributed tracing (`_system.trace`) enabled by default.
-- **🎯 Middleware support** — Compose logging, metrics, retries, and custom logic via middleware pipeline.
-- **🌐 Distributed-ready** — Host/Worker node model with built-in discovery and shutdown coordination.
-- **🛑 Graceful shutdown** — 7 shutdown strategies, including two-stage drain and force timeout.
-- **🧩 gRPC management API** — Query node status, list workers, trigger shutdown, stream metrics.
+## Quick Start
+
+```rust
+use event_base::prelude::*;
+
+#[handler(topic = "greeting", workers = 2)]
+async fn handle_greeting(msg: &EMessage) -> Ack {
+    println!("Got: {:?}", msg);
+    Ack::Ack
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    start_queue_system! {
+        factory: MemoryQueueFactory::new(1000),
+        wal: Some(MemoryWal::new()),
+    }
+    send_msg!("greeting", EMessage::new("greeting", b"Hello!".to_vec())).await?;
+    Ok(())
+}
+```
+
+## Installation
+
+```bash
+cargo add event_base
+```
+
+Enable full features:
+
+```toml
+[dependencies]
+event_base = { version = "0.1", features = ["full"] }
+```
+
+## Guides
+
+| Guide | Description |
+|---|---|
+| [Quick Start](guide/quick-start.md) | Complete walkthrough — first handler, first message |
+| [Core Concepts](guide/core-concepts.md) | EMessage, Handler, Ack, routing, message flow |
+| [Handlers](guide/handler.md) | `#[handler]` macro — parameters, Ack variants |
+| [Middleware](guide/middleware.md) | Write and compose middleware pipelines |
+| [Sending Messages](guide/sending.md) | Standard, Broadcast, Repeated delivery |
+| [Persistence & WAL](guide/persistence.md) | Crash recovery, MemoryWal vs PersistentWal |
+| [Shutdown Strategies](guide/shutdown.md) | 7 graceful/forceful shutdown patterns |
+| [Distributed Mode](guide/distributed.md) | Host/Worker nodes, discovery, heartbeats |
+
+## Internals
+
+| Document | Description |
+|---|---|
+| [Architecture](internals/architecture.md) | Module structure, crate deps, data flow diagrams |
+
+## Performance
+
+| Benchmark | Throughput |
+|---|---|
+| `TopicRouter::send` (50K msgs) | **2.08 Melem/s** |
+| `queue_send_mpmc` (1M msgs) | **1.01 Melem/s** |
+| `handler-only` (10K msgs) | **102.83 Kelem/s** |
+| `handler+1mw` (10K msgs) | **39.42 Kelem/s** |
+
+Full benchmark reports: [`target/criterion/`](https://github.com/RedElectricity/event_base)
+
+## License
+
+BSD-3-Clause

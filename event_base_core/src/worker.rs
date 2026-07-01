@@ -11,7 +11,6 @@ use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::middleware::Pipeline;
 use crate::queues::consumer_router::ConsumerRouter;
 use crate::queues::{EConsumer, EProducer};
-use crate::shutdown::ShutdownReceiver;
 use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
 use crate::topic::TopicRouter;
 use crate::wal::sync::WalClient;
@@ -21,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tracing::{error, warn};
 use uuid::Uuid;
@@ -34,7 +34,7 @@ pub struct Worker {
     pub pipeline: Arc<Pipeline>,
     pub producer: Arc<dyn EProducer>,
     pub time_out: Option<Duration>,
-    pub shutdown_receiver: Arc<Mutex<ShutdownReceiver>>,
+    shutdown_notify: Arc<Notify>,
     pub shutdown_check_interval: Duration,
     pub shutdown_timeout: Option<Duration>,
     pub status: Arc<Mutex<WorkerStatus>>,
@@ -64,7 +64,6 @@ impl Worker {
         time_out: Option<Duration>,
         shutdown_check_interval: Duration,
         shutdown_timeout: Option<Duration>,
-        shutdown_receiver: ShutdownReceiver,
     ) -> Self {
         let name = format!("worker-{}-{}", topic, Uuid::new_v4());
         Self {
@@ -76,7 +75,7 @@ impl Worker {
             time_out,
             shutdown_check_interval,
             shutdown_timeout,
-            shutdown_receiver: Arc::new(Mutex::new(shutdown_receiver)),
+            shutdown_notify: Arc::new(Notify::new()),
             status: Arc::new(Mutex::new(Idle)),
             wal: WalClient::new(name),
             shutdown_complete: Arc::new(AtomicBool::new(false)),
@@ -86,14 +85,13 @@ impl Worker {
     /// Starts the worker's main loop.
     ///
     /// It repeatedly receives messages, processes them, and handles the returned `Ack`.
-    /// It also monitors the shutdown receiver to perform graceful shutdown.
+    /// It also monitors the shutdown notify to perform graceful shutdown.
     pub async fn start(&self) {
-        let mut shutdown_receiver = self.shutdown_receiver.lock().await;
         let mut consumer = self.consumer.lock().await;
 
         loop {
             tokio::select! {
-                _ = shutdown_receiver.recv() => {
+                _ = self.shutdown_notify.notified() => {
                     let _ = self.shutdown(self.shutdown_check_interval, self.shutdown_timeout).await;
                     break;
                 }
@@ -324,8 +322,8 @@ impl Worker {
 
     /// Gracefully shuts down the worker.
     ///
-    /// Waits until the worker becomes idle (or until timeout) and sends a shutdown
-    /// acknowledgment message.
+    /// Notifies the `start()` loop to wake up and exit, waits until the worker
+    /// becomes idle (or until timeout), and sends a shutdown acknowledgment message.
     ///
     /// # Errors
     /// Returns `CoreError` if sending the ack fails.
@@ -334,6 +332,9 @@ impl Worker {
         check_interval: Duration,
         timeout: Option<Duration>,
     ) -> Result<(), CoreError> {
+        // Signal the start() loop to wake up and exit
+        self.shutdown_notify.notify_one();
+
         let start = SystemTime::now();
 
         while self.get_status().await == Working {
@@ -393,5 +394,45 @@ impl Worker {
     /// Returns the current status of the worker.
     pub async fn get_status(&self) -> WorkerStatus {
         *self.status.lock().await
+    }
+
+    /// **Test helper**: directly invokes `process_msg` for integration testing.
+    ///
+    /// This is equivalent to the private `process_msg` path but exposed for
+    /// test crates to verify processing logic without spawning the full
+    /// `start()` loop.
+    #[doc(hidden)]
+    pub async fn test_process_msg(&self, msg: EMessage) -> Result<(), CoreError> {
+        self.process_msg(msg).await
+    }
+
+    /// **Test helper**: exposes `requeue_message`.
+    #[doc(hidden)]
+    pub async fn test_requeue_message(&self, msg: EMessage) -> Result<(), CoreError> {
+        self.requeue_message(msg).await
+    }
+
+    /// **Test helper**: exposes `generate_audit_msg`.
+    #[doc(hidden)]
+    pub fn test_generate_audit_msg(
+        &self,
+        msg: EMessage,
+        result: AuditResult,
+        audit_event_type: AuditEventType,
+        error: Option<String>,
+        duration: Option<Duration>,
+    ) -> AuditRecord {
+        self.generate_audit_msg(msg, result, audit_event_type, error, duration)
+    }
+
+    /// **Test helper**: exposes `send_to_dead_letter`.
+    #[doc(hidden)]
+    pub async fn test_send_to_dead_letter(
+        &self,
+        msg: EMessage,
+        reason: DeadReason,
+        process_time: Duration,
+    ) -> Result<(), CoreError> {
+        self.send_to_dead_letter(msg, reason, process_time).await
     }
 }

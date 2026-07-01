@@ -97,14 +97,12 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
 
             // Create the specified number of workers.
             for i in 0..#workers {
-                let shutdown_rx = shutdown_tx.subscribe();
                 let worker = cr.create_worker(
                     #topic,
                     pipeline,
                     #timeout.map(std::time::Duration::from_secs),
                     #shutdown_timeout.map(std::time::Duration::from_secs),
                     #shutdown_check_interval.map(std::time::Duration::from_millis),
-                    shutdown_rx,
                 ).await?;
             }
 

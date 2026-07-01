@@ -12,7 +12,6 @@ use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
 use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
-use crate::shutdown::ShutdownReceiver;
 use crate::worker::Worker;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -246,7 +245,6 @@ impl ConsumerRouter {
     /// * `timeout` - Optional per‑message processing timeout.
     /// * `shutdown_timeout` - Optional timeout for graceful shutdown.
     /// * `shutdown_check_interval` - Interval to check for idle status during shutdown.
-    /// * `shutdown_rx` - Receiver for shutdown signals.
     ///
     /// # Returns
     /// The name of the created worker.
@@ -260,15 +258,14 @@ impl ConsumerRouter {
         timeout: Option<Duration>,
         shutdown_timeout: Option<Duration>,
         shutdown_check_interval: Option<Duration>,
-        shutdown_rx: ShutdownReceiver,
     ) -> Result<String, CoreError> {
-        let map = self.local_topics.read().await;
         let (producer, consumer_factory) = {
+            let map = self.local_topics.read().await;
             let entry = map
                 .get(topic)
                 .ok_or_else(|| TopicError::NotFound(topic.to_string()))?;
             (entry.producer.clone(), entry.consumer_factory.clone())
-        };
+        }; // ← map dropped here, releasing the read lock
 
         let consumer = consumer_factory.create_consumer();
 
@@ -280,7 +277,6 @@ impl ConsumerRouter {
             timeout,
             shutdown_check_interval.unwrap_or(Duration::from_millis(50)),
             shutdown_timeout,
-            shutdown_rx,
         ));
 
         let worker_handle = worker.clone();

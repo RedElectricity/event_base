@@ -28,7 +28,7 @@ pub struct DeadLetterMessage {
 }
 
 /// The reason why a message was moved to the dead letter queue.
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode, Error)]
 pub enum DeadReason {
     /// The message exceeded its maximum allowed retry count.
     #[error("Max Retries exceeded")]

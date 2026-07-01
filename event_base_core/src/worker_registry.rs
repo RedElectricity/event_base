@@ -87,6 +87,7 @@ impl WorkerRegistry {
     pub async fn register(&self, info: WorkerInfo) -> Result<(), CoreError> {
         let mut workers = self.workers.write().await;
         workers.insert(info.clone().worker_name, info);
+        drop(workers);
         self.save_worker_registry().await?;
         Ok(())
     }

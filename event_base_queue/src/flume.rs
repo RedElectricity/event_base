@@ -57,12 +57,10 @@ impl EProducer for MemoryProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        let result = tokio::time::timeout(timeout, self.send(msg)).await;
-
-        if result.is_err() {
-            return Err(CoreError::from(QueueError::Timeout));
+        match tokio::time::timeout(timeout, self.send(msg)).await {
+            Err(_elapsed) => Err(CoreError::from(QueueError::Timeout)),
+            Ok(inner) => inner,
         }
-        Ok(())
     }
 }
 
@@ -105,7 +103,7 @@ impl EConsumer for MemoryConsumer {
                 return Err(CoreError::from(QueueError::Send(e.to_string())));
             }
             pending.remove(claim_id);
-            return  Ok(())
+            return Ok(());
         }
         Err(QueueError::InvalidClaimId(claim_id.to_string()).into())
     }

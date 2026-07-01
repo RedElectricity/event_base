@@ -1,7 +1,10 @@
 # EventBase
 
-> <div style="text-align: center;">Stop wiring channels. Start orchestrating events.</div>
->
-> **A type-safe, macro-driven event-driven framework for Rust applications.**
+> **Stop wiring channels. Start orchestrating events.**
 
-[GitHub](https://github.com/RedElectricity/event_base) [Get Started](#EventBase) [Sponsor](/#/sponsor)
+A type-safe, macro-driven event-driven framework for Rust applications.
+
+[GitHub](https://github.com/RedElectricity/event_base)
+[Get Started](README.md)
+[Benchmarks](benchmark/report/index.html)
+[API Docs](https://docs.rs/event_base)

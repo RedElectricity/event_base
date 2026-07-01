@@ -130,7 +130,10 @@ where
             DeliveryMode::Standard,
             None,
         );
-        let _ = self.producer.try_send(msg);
+        let producer = self.producer.clone();
+        tokio::spawn(async move {
+            let _ = producer.try_send(msg).await;
+        });
     }
 
     /// When a span is closed, the stored `TraceRecord` is completed with finish time

@@ -23,7 +23,7 @@ pub enum QueueError {
 
     #[error("Invalid Claim Id: {0}")]
     InvalidClaimId(String),
-    
+
     /// A reception operation failed.
     #[error("Receive error: {0}")]
     Receive(String),
