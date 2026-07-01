@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "event_base"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "event_base_audit 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
