@@ -1,6 +1,6 @@
 [package]
 name = "event_base_core"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
 authors = ["RedElectricity <redelectricity@outlook.com>"]
 description = "An Event Driven Framework - Core Crate"

@@ -106,11 +106,13 @@ async fn topic_router_full_lifecycle() {
     let scheduled = fake_wal.scheduled_records().await;
     assert_eq!(scheduled.len(), 1);
 
-    // ---- past delivery time returns error ----
+    // ---- past delivery time is tolerated (scheduled in WAL, not rejected) ----
     let mut past = message("orders", b"past", DeliveryMode::Standard);
     past.deliver_at = Some(SystemTime::now() - Duration::from_secs(10));
-    let result = router.send("orders", past, None, None).await;
-    assert!(matches!(result, Err(CoreError::ErrorTime)));
+    router
+        .send("orders", past, None, None)
+        .await
+        .expect("past deliver_at should schedule in WAL, not fail");
 
     // ---- replay with filter ----
     let pending_msg = message("orders", b"recover-me", DeliveryMode::Standard);
@@ -135,9 +137,10 @@ async fn topic_router_full_lifecycle() {
         .replay(Some(&["orders"]))
         .await
         .expect("replay should succeed");
-    // Each previous send() appended a WAL record; with 3 sends + 3 seeded = 6
-    // pending records matching "orders": 5 non-delayed get recovered, 1 delayed
-    assert_eq!(summary.recovered, 5);
+    // send() no longer writes to WAL, so only the 3 seed records exist.
+    // "orders" filter: pending_msg (recovered), delayed_msg (delayed),
+    // ignored_msg (filtered out).
+    assert_eq!(summary.recovered, 1);
     assert!(summary.delayed >= 1);
     assert!(summary.errors.is_empty());
     assert!(

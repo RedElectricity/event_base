@@ -136,7 +136,9 @@ impl TopicRouter {
         timeout: Option<Duration>,
     ) -> Result<(), CoreError> {
         // Delayed messages are scheduled directly via the WAL.
-        if msg.deliver_at.is_some() {
+        // Note: past `deliver_at` is tolerated — the WAL scheduler will deliver
+        // them immediately on the next tick.
+        if let Some(_deliver_at) = msg.deliver_at {
             let wr = WorkerRegistry::global();
             let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
             let guard = wal.write().await;

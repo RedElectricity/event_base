@@ -476,9 +476,9 @@ async fn worker_and_router_and_shutdown_integration() {
         error: None,
         timestamp: SystemTime::now(),
     };
-    let sync_json = serde_json::to_vec(&sync).expect("serialize");
+    let sync_bytes = bincode::encode_to_vec(&sync, bincode::config::standard()).expect("serialize");
     let sync_decoded: event_base_core::wal::sync::WalSyncMessage =
-        serde_json::from_slice(&sync_json).expect("deserialize");
+        bincode::decode_from_slice(&sync_bytes, bincode::config::standard()).expect("deserialize").0;
     assert_eq!(sync_decoded.message_id, "msg-1");
     assert_eq!(sync_decoded.attempts, 2);
 

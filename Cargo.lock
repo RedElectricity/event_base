@@ -415,14 +415,14 @@ dependencies = [
 name = "event_base"
 version = "0.1.2"
 dependencies = [
- "event_base_audit 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_grpc 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_macro_attr 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_macro_func 0.1.1",
- "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_queue 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_wal 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_audit",
+ "event_base_core",
+ "event_base_grpc",
+ "event_base_macro_attr",
+ "event_base_macro_func",
+ "event_base_middleware",
+ "event_base_queue",
+ "event_base_wal",
 ]
 
 [[package]]
@@ -431,46 +431,12 @@ version = "0.1.1"
 dependencies = [
  "async-trait",
  "chrono",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "event_base_audit"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb69e21a0e081ae361f77d3b91b64e714658ea4324bcd6cb4f95a799c0a03c34"
-dependencies = [
- "async-trait",
- "chrono",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
 ]
 
 [[package]]
 name = "event_base_core"
-version = "1.0.2"
-dependencies = [
- "async-trait",
- "bincode",
- "futures",
- "linkme",
- "ringbuf",
- "serde",
- "serde_json",
- "sysinfo",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-serde",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "event_base_core"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c806ba72e1e71c558a2ad9f8de5cc1d3b463533e06a44c13bdc7d3cbb209d302"
+version = "1.0.3"
 dependencies = [
  "async-trait",
  "bincode",
@@ -493,21 +459,7 @@ dependencies = [
 name = "event_base_grpc"
 version = "0.1.1"
 dependencies = [
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "prost",
- "serde_json",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
-]
-
-[[package]]
-name = "event_base_grpc"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d35cdf2bc5018880dcbe43755d37afb79a7d7cc2856fe6cf9717def1f425cf"
-dependencies = [
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
  "prost",
  "serde_json",
  "tonic",
@@ -522,29 +474,6 @@ dependencies = [
  "darling",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "event_base_macro_attr"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "014f83021cfafa5df16b3fa7a40378a4ab047b51778005a14d00e45a70f35caa"
-dependencies = [
- "darling",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "event_base_macro_func"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8efe397ea72aa37ccdebc37900f5908966b5130ce417f98a92f30d76191fe90d"
-dependencies = [
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json",
- "tokio",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -552,7 +481,7 @@ name = "event_base_macro_func"
 version = "0.1.2"
 dependencies = [
  "bincode",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
  "tokio",
  "tracing-subscriber",
 ]
@@ -562,18 +491,7 @@ name = "event_base_middleware"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "tracing",
-]
-
-[[package]]
-name = "event_base_middleware"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1a513935743970ccdfe160184ca5b26ef38be6ba5d29ff6a7850a3b9b2ffa79"
-dependencies = [
- "async-trait",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
  "tracing",
 ]
 
@@ -583,21 +501,7 @@ version = "0.1.3"
 dependencies = [
  "async-trait",
  "crossfire",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "flume",
- "tokio",
- "tokio-mpmc",
- "uuid",
-]
-
-[[package]]
-name = "event_base_queue"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18ed07fc3e2a693569f78ca1bef1bbeebb7fe9f19e2db7b25cf64eedf8629cd1"
-dependencies = [
- "async-trait",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
  "flume",
  "tokio",
  "tokio-mpmc",
@@ -611,9 +515,9 @@ dependencies = [
  "async-trait",
  "bincode",
  "criterion",
- "event_base_core 1.0.2",
- "event_base_queue 0.1.3",
- "event_base_wal 0.1.2",
+ "event_base_core",
+ "event_base_queue",
+ "event_base_wal",
  "serde_json",
  "tempfile",
  "tokio",
@@ -627,20 +531,7 @@ version = "0.1.2"
 dependencies = [
  "async-trait",
  "bincode",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "event_base_wal"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c476758c168dc3a5242927c6a8fde6293c4a4e06a69c44de56c0fc1806a4a55"
-dependencies = [
- "async-trait",
- "bincode",
- "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_core",
  "serde",
  "tokio",
 ]
@@ -1730,7 +1621,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys",

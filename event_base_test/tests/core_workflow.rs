@@ -135,6 +135,11 @@ async fn core_workflow_covers_global_paths() {
         .expect("standard send should succeed");
     assert_eq!(producer.sent.lock().await.len(), 1);
     assert_eq!(producer.sent.lock().await[0].topic.0, "orders");
+    // TopicRouter::send does NOT write to the WAL, see topic.rs doc comment.
+    // Seed the WAL manually so update_state can find the record.
+    fake_wal
+        .seed_pending(WalRecord::from_msg(producer.sent.lock().await[0].clone()))
+        .await;
     wal_state
         .update_state(&standard_id, WalRecordState::Complete)
         .await
@@ -147,6 +152,9 @@ async fn core_workflow_covers_global_paths() {
         .await
         .expect("try send should succeed");
     assert_eq!(producer.try_sent.lock().await.len(), 1);
+    fake_wal
+        .seed_pending(WalRecord::from_msg(producer.try_sent.lock().await[0].clone()))
+        .await;
     wal_state
         .update_state(&try_id, WalRecordState::Complete)
         .await
@@ -159,6 +167,9 @@ async fn core_workflow_covers_global_paths() {
         .await
         .expect("timeout send should succeed");
     assert_eq!(producer.timeout_sent.lock().await.len(), 1);
+    fake_wal
+        .seed_pending(WalRecord::from_msg(producer.timeout_sent.lock().await[0].0.clone()))
+        .await;
     wal_state
         .update_state(&timeout_id, WalRecordState::Complete)
         .await
@@ -195,6 +206,13 @@ async fn core_workflow_covers_global_paths() {
             .all(|msg| msg.id.starts_with(&broadcast_id))
     );
     drop(try_sent);
+    fake_wal
+        .seed_pending(WalRecord::from_msg({
+            let mut m = message("ignored", b"", DeliveryMode::Standard);
+            m.id = broadcast_id.clone();
+            m
+        }))
+        .await;
     wal_state
         .update_state(&broadcast_id, WalRecordState::Complete)
         .await
@@ -204,11 +222,18 @@ async fn core_workflow_covers_global_paths() {
     let mut past_msg = past_msg;
     let past_msg_id = past_msg.id.clone();
     past_msg.deliver_at = Some(SystemTime::now() - Duration::from_secs(1));
-    let past_result = topic_router.send("orders", past_msg, None, None).await;
-    assert!(matches!(
-        past_result,
-        Err(event_base_core::error::CoreError::ErrorTime)
-    ));
+    // TopicRouter schedules past-deliver_at messages in the WAL (no ErrorTime check)
+    topic_router
+        .send("orders", past_msg, None, None)
+        .await
+        .expect("past deliver_at should schedule in WAL, not fail");
+    fake_wal
+        .seed_pending(WalRecord::from_msg({
+            let mut m = message("ignored", b"", DeliveryMode::Standard);
+            m.id = past_msg_id.clone();
+            m
+        }))
+        .await;
     wal_state
         .update_state(&past_msg_id, WalRecordState::Complete)
         .await

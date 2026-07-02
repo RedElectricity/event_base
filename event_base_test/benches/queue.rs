@@ -160,7 +160,7 @@ impl EHandler for CpuHandler {
         for i in 0..100 {
             s = s.wrapping_add(i);
         }
-        criterion::black_box(s);
+        std::hint::black_box(s);
         Ack::Ack
     }
 }

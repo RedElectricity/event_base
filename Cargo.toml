@@ -11,14 +11,14 @@ documentation = "https://docs.rs/event_base"
 
 
 [dependencies]
-event_base_core = "1.0.2"
-event_base_audit = "0.1.0"
-event_base_grpc = "0.1.0"
-event_base_macro_attr = "0.1.0"
-event_base_macro_func = "0.1.0"
-event_base_middleware = "0.1.0"
-event_base_queue = "0.1.0"
-event_base_wal = "0.1.0"
+event_base_core.workspace = true
+event_base_audit.workspace = true
+event_base_grpc.workspace = true
+event_base_macro_attr.workspace = true
+event_base_macro_func.workspace = true
+event_base_middleware.workspace = true
+event_base_queue.workspace = true
+event_base_wal.workspace = true
 
 [workspace]
 members = ["event_base_core",
@@ -32,6 +32,16 @@ members = ["event_base_core",
             "event_base_grpc"
             ]
 resolver = "3"
+
+[workspace.dependencies]
+event_base_core = { path = "event_base_core", version = "1.0.3" }
+event_base_wal = { path = "event_base_wal", version = "0.1.2" }
+event_base_queue = { path = "event_base_queue", version = "0.1.3" }
+event_base_audit = { path = "event_base_audit", version = "0.1.1" }
+event_base_grpc = { path = "event_base_grpc", version = "0.1.1" }
+event_base_macro_attr = { path = "event_base_macro_attr", version = "0.1.1" }
+event_base_macro_func = { path = "event_base_macro_func", version = "0.1.2" }
+event_base_middleware = { path = "event_base_middleware", version = "0.1.0" }
 
 [features]
 default = ["memory", "macro"]
