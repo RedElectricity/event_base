@@ -419,7 +419,7 @@ dependencies = [
  "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_grpc 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_macro_attr 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "event_base_macro_func 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "event_base_macro_func 0.1.1",
  "event_base_middleware 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_queue 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "event_base_wal 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -538,21 +538,21 @@ dependencies = [
 [[package]]
 name = "event_base_macro_func"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8efe397ea72aa37ccdebc37900f5908966b5130ce417f98a92f30d76191fe90d"
 dependencies = [
- "bincode",
  "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json",
  "tokio",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "event_base_macro_func"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8efe397ea72aa37ccdebc37900f5908966b5130ce417f98a92f30d76191fe90d"
+version = "0.1.2"
 dependencies = [
+ "bincode",
  "event_base_core 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json",
  "tokio",
  "tracing-subscriber",
 ]
