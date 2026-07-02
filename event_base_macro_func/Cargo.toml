@@ -10,7 +10,7 @@ homepage = "https://github.com/RedElectricity/event_base"
 documentation = "https://docs.rs/event_base"
 
 [dependencies]
-event_base_core = "1.0.0"
-serde_json = "1.0.150"
+event_base_core = "1.0.2"
 tokio = { version = "1.52.3", features = ["full"] }
 tracing-subscriber = "0.3.23"
+bincode = "2.0.1"

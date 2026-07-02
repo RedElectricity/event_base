@@ -9,6 +9,7 @@ event_base_core = {path = "../event_base_core"}
 event_base_queue = {path = "../event_base_queue"}
 event_base_wal = {path = "../event_base_wal"}
 tokio = { version = "1.52.3", features = ["full"] }
+bincode = "2.0.1"
 
 [dev-dependencies]
 criterion = "0.8.2"

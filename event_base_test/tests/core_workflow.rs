@@ -274,7 +274,7 @@ async fn core_workflow_covers_global_paths() {
     let metrics = node_metrics(&get_node_name());
     let metrics_message = message(
         "_system.metrics",
-        &serde_json::to_vec(&metrics).expect("metrics should serialize"),
+        &bincode::encode_to_vec(&metrics, bincode::config::standard()).expect("metrics should serialize"),
         DeliveryMode::Standard,
     );
     assert!(matches!(
@@ -302,12 +302,12 @@ async fn core_workflow_covers_global_paths() {
     let shutdown_handler = ShutdownAckHandler;
     let shutdown_message = message(
         "_system.shutdown_ack",
-        &serde_json::to_vec(&ShutdownAck {
+        &bincode::encode_to_vec(&ShutdownAck {
             worker_name: "retire-me".to_string(),
             status: ShutdownStatus::Completed,
             timestamp: SystemTime::now(),
             error: None,
-        })
+        }, bincode::config::standard())
         .expect("shutdown ack should serialize"),
         DeliveryMode::Standard,
     );

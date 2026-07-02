@@ -11,7 +11,7 @@ documentation = "https://docs.rs/event_base"
 
 
 [dependencies]
-event_base_core = "1.0.0"
+event_base_core = "1.0.2"
 event_base_audit = "0.1.0"
 event_base_grpc = "0.1.0"
 event_base_macro_attr = "0.1.0"

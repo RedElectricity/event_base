@@ -228,7 +228,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         n.iter()
             .filter(|x| x.topic.0 == SYSTEM_TOPIC_WAL_SYNC)
             .any(|x| {
-                serde_json::from_slice::<WalSyncMessage>(&x.payload.0).map_or(false, |s| {
+                bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard()).map_or(false, |(s, _)| {
                     s.status == WalRecordState::Failed && s.message_id == mid
                 })
             })
@@ -311,7 +311,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     w.test_process_msg(m).await.expect("6");
     let wms = g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await;
     assert!(wms.iter().skip(bw).any(|x| {
-        serde_json::from_slice::<WalSyncMessage>(&x.payload.0).map_or(false, |s| {
+        bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard()).map_or(false, |(s, _)| {
             s.status == WalRecordState::Complete && s.message_id == mid
         })
     }));
@@ -332,7 +332,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     assert_eq!(wp.sent.lock().await[bw].consumed_count, 1);
     let wms = g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await;
     assert!(wms.iter().skip(bwl).any(|x| {
-        serde_json::from_slice::<WalSyncMessage>(&x.payload.0).map_or(false, |s| {
+        bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard()).map_or(false, |(s, _)| {
             s.status == WalRecordState::Pending && s.message_id == mid
         })
     }));
@@ -375,7 +375,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     assert!(n.iter().all(|x| x.topic.0 == SYSTEM_TOPIC_WAL_SYNC));
     let d: Vec<WalSyncMessage> = n
         .iter()
-        .map(|x| serde_json::from_slice(&x.payload.0).unwrap())
+        .map(|x| bincode::decode_from_slice(&x.payload.0, bincode::config::standard()).unwrap().0)
         .collect();
     assert!(
         d.iter()
@@ -406,8 +406,8 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         .await
         .expect("10");
     assert!(g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await.iter().any(|x| {
-        serde_json::from_slice::<WalSyncMessage>(&x.payload.0)
-            .map_or(false, |s| s.status == WalRecordState::Complete)
+        bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
+            .map_or(false, |(s, _)| s.status == WalRecordState::Complete)
     }));
     cr.del_workers(t).await.ok();
 
@@ -468,7 +468,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         .filter(|x| x.topic.0 == SYSTEM_TOPIC_SHUTDOWN_ACK)
         .collect();
     assert!(!acks.is_empty());
-    if let Ok(a) = serde_json::from_slice::<ShutdownAck>(&acks[0].payload.0) {
+    if let Ok((a, _)) = bincode::decode_from_slice::<ShutdownAck, _>(&acks[0].payload.0, bincode::config::standard()) {
         assert_eq!(a.worker_name, wname);
     }
     drop(ms);
@@ -513,7 +513,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             .iter()
             .skip(bwl)
             .any(|x| {
-                serde_json::from_slice::<WalSyncMessage>(&x.payload.0).map_or(false, |s| {
+                bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard()).map_or(false, |(s, _)| {
                     s.status == WalRecordState::Pending && s.message_id == mid
                 })
             })
@@ -536,7 +536,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             .iter()
             .skip(bw)
             .any(|x| {
-                serde_json::from_slice::<WalSyncMessage>(&x.payload.0).map_or(false, |s| {
+                bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard()).map_or(false, |(s, _)| {
                     s.status == WalRecordState::Complete && s.message_id == mid
                 })
             })

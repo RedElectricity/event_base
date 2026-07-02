@@ -204,8 +204,9 @@ fn dead_letter_message_serialization_roundtrip() {
         died_at: SystemTime::now(),
         attempts: 3,
     };
-    let json = serde_json::to_vec(&dl).expect("serialize");
-    let decoded: DeadLetterMessage = serde_json::from_slice(&json).expect("deserialize");
+    let bytes = bincode::encode_to_vec(&dl, bincode::config::standard()).expect("serialize");
+    let decoded: DeadLetterMessage =
+        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
     assert_eq!(decoded.attempts, 3);
     assert!(matches!(decoded.dead_reason, DeadReason::Timeout));
 }
