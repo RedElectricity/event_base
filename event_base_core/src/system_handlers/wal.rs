@@ -28,8 +28,8 @@ impl WalSyncHandler {
 #[async_trait]
 impl EHandler for WalSyncHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let sync: WalSyncMessage = match serde_json::from_slice(&msg.payload.0) {
-            Ok(s) => s,
+        let sync: WalSyncMessage = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+            Ok((s, _)) => s,
             Err(e) => {
                 eprintln!("[SYSTEM] Failed to deserialize Wal Sync Message: {}", e);
                 return Ack::Ack;

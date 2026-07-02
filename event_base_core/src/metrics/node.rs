@@ -11,12 +11,13 @@ use crate::message::{EMessage, MessageTopic};
 use crate::queues::consumer_router::ConsumerRouter;
 use crate::topic::TopicRouter;
 use crate::{NodeType, get_node_name, get_node_type, message};
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime};
 use sysinfo::System;
 
 /// Metrics describing the current state of a node.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, Encode, Decode)]
 pub struct NodeMetrics {
     /// Unique name of the node.
     pub node_name: String,
@@ -49,7 +50,7 @@ impl NodeCollector {
             let metrics = self.collect().await;
             let msg = EMessage::new(
                 MessageTopic(SYSTEM_TOPIC_METRICS.to_string()),
-                message::MessagePayload(serde_json::to_vec(&metrics)?),
+                message::MessagePayload(bincode::encode_to_vec(&metrics, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
                 Standard,
                 None,
             );

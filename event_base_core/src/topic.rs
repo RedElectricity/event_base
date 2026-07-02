@@ -1,16 +1,16 @@
-//! Topic routing and message sending with WAL persistence.
+//! Topic routing and message sending.
 //!
-//! The `TopicRouter` manages message delivery to topics, handles delayed messages,
-//! broadcast to workers, and recovery from the write-ahead log.
+//! The `TopicRouter` manages message delivery to topics, including broadcast
+//! to workers and delayed message scheduling. WAL persistence is handled
+//! externally by callers (e.g. via `WalClient` for system topics).
 
 use crate::error::CoreError;
 use crate::message::DeliveryMode::Broadcast;
 use crate::message::{EMessage, MessageTopic};
 use crate::queues::EProducer;
-use crate::wal::wal::{Wal, WalRecord};
+use crate::wal::wal::WalRecord;
 use crate::worker_registry::WorkerRegistry;
 use crate::{NodeType, get_node_type};
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
@@ -18,10 +18,12 @@ use tokio::sync::RwLock;
 
 static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
 
-/// Manages topic-based message routing, WAL, and producer interaction.
+/// Manages topic-based message routing and producer interaction.
+///
+/// WAL persistence is NOT handled here — callers that need durability must
+/// append to the WAL before calling [`send`](TopicRouter::send).
 pub struct TopicRouter {
     inner: RwLock<Vec<String>>,
-    wal: Arc<RwLock<Box<dyn Wal>>>,
     producer: Arc<dyn EProducer>,
 }
 
@@ -37,18 +39,14 @@ pub struct ReplaySummary {
 }
 
 impl TopicRouter {
-    /// Initializes the global topic router with a WAL and a producer.
+    /// Initializes the global topic router with a producer.
     ///
     /// # Errors
     /// Returns `CoreError::AlreadyInitialized` if called more than once.
-    pub fn init(
-        wal: Arc<RwLock<Box<dyn Wal>>>,
-        producer: Arc<dyn EProducer>,
-    ) -> Result<(), CoreError> {
+    pub fn init(producer: Arc<dyn EProducer>) -> Result<(), CoreError> {
         let router = Arc::new(TopicRouter {
             inner: RwLock::new(Vec::new()),
             producer,
-            wal,
         });
         TOPIC_ROUTER
             .set(router)
@@ -70,33 +68,36 @@ impl TopicRouter {
     /// Replays pending messages from the WAL, optionally filtering by topics.
     ///
     /// Messages with a future `deliver_at` are re-scheduled; others are sent
-    /// immediately.
+    /// immediately.  WAL access is obtained via [`WorkerRegistry::global`].
     ///
     /// # Errors
     /// Returns `CoreError` if WAL operations fail.
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
+        let wr = WorkerRegistry::global();
+        let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
+
         let pending = {
-            let wal = &mut self.wal.write().await;
-            wal.replay_pending().await?
+            let mut guard = wal.write().await;
+            guard.replay_pending().await?
         };
 
         let mut summary = ReplaySummary::default();
-        let topic_set: Option<HashSet<String>> =
+        let topic_filter: Option<Vec<String>> =
             topics.map(|t| t.iter().map(|s| s.to_string()).collect());
 
         for record in pending {
             let msg = record.message;
 
-            if let Some(ref allowed_topics) = topic_set {
-                if !allowed_topics.contains(&msg.topic.0) {
+            if let Some(ref allowed) = topic_filter {
+                if !allowed.contains(&msg.topic.0) {
                     continue;
                 }
             }
 
             if let Some(deliver_at) = msg.deliver_at {
                 if deliver_at > SystemTime::now() {
-                    let wal = &mut self.wal.write().await;
-                    wal.schedule(WalRecord::from_msg(msg)).await?;
+                    let guard = wal.write().await;
+                    guard.schedule(WalRecord::from_msg(msg)).await?;
                     summary.delayed += 1;
                     continue;
                 }
@@ -121,12 +122,12 @@ impl TopicRouter {
 
     /// Sends a message to the given topic, with optional try-send or timeout.
     ///
-    /// The message is first appended to the WAL. If `deliver_at` is set, it is scheduled.
-    /// For broadcast messages, it is sent to all workers registered for the topic.
+    /// This method does NOT write to the WAL — the caller is responsible for
+    /// any durability guarantees (e.g., via `WalClient` or manual WAL append).
+    /// For broadcast messages, copies are sent to all workers registered for the topic.
     ///
     /// # Errors
-    /// Returns `CoreError` if WAL append fails, producer send fails, or the node type
-    /// is invalid for broadcast.
+    /// Returns `CoreError` if producer send fails or the node type is invalid for broadcast.
     pub async fn send(
         &self,
         topic: &str,
@@ -134,20 +135,14 @@ impl TopicRouter {
         try_send: Option<bool>,
         timeout: Option<Duration>,
     ) -> Result<(), CoreError> {
-        let record = WalRecord::from_msg(msg.clone());
-        let mut wal = self.wal.write().await;
-        wal.append(record).await?;
-
+        // Delayed messages are scheduled directly via the WAL.
         if msg.deliver_at.is_some() {
-            if msg.deliver_at < Option::from(SystemTime::now()) {
-                return Err(CoreError::ErrorTime);
-            }
-            let record = WalRecord::from_msg(msg.clone());
-            wal.schedule(record).await?;
+            let wr = WorkerRegistry::global();
+            let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
+            let guard = wal.write().await;
+            guard.schedule(WalRecord::from_msg(msg)).await?;
             return Ok(());
         }
-
-        drop(wal);
 
         if msg.delivery_mode == Broadcast {
             if get_node_type() == Arc::from(NodeType::Worker) {
@@ -158,26 +153,47 @@ impl TopicRouter {
             let workers = WorkerRegistry::global().get_workers(topic).await?;
             for worker_index in workers {
                 let mut copy = msg.clone();
-                copy.id = format!("{}-{}", msg.id, worker_index.worker_name.clone());
-                copy.to_worker = Option::from(worker_index.worker_name.clone());
+                copy.id = format!("{}-{}", msg.id, worker_index.worker_name);
+                copy.to_worker = Some(worker_index.worker_name);
                 if try_send.unwrap_or(false) {
-                    self.producer.try_send(copy.clone()).await?;
+                    self.producer.try_send(copy).await?;
                 } else if let Some(to) = timeout {
-                    self.producer.send_timeout(copy.clone(), to).await?;
+                    self.producer.send_timeout(copy, to).await?;
                 } else {
                     self.producer.send(copy).await?;
                 }
             }
-
             return Ok(());
         }
 
         msg.topic = MessageTopic(topic.to_string());
 
         if try_send.unwrap_or(false) {
-            self.producer.try_send(msg.clone()).await?;
+            self.producer.try_send(msg).await?;
         } else if let Some(to) = timeout {
-            self.producer.send_timeout(msg.clone(), to).await?;
+            self.producer.send_timeout(msg, to).await?;
+        } else {
+            self.producer.send(msg).await?;
+        }
+        Ok(())
+    }
+
+    /// Sends a system message without WAL persistence.
+    ///
+    /// System topics (WAL sync, audit, metrics, etc.) carry metadata that is
+    /// already part of the WAL state — writing them again would be redundant.
+    /// This method skips the WAL append entirely and only pushes the message
+    /// to the underlying producer.
+    pub async fn send_system(
+        &self,
+        msg: EMessage,
+        try_send: Option<bool>,
+        timeout: Option<Duration>,
+    ) -> Result<(), CoreError> {
+        if try_send.unwrap_or(false) {
+            self.producer.try_send(msg).await?;
+        } else if let Some(to) = timeout {
+            self.producer.send_timeout(msg, to).await?;
         } else {
             self.producer.send(msg).await?;
         }
@@ -185,12 +201,22 @@ impl TopicRouter {
     }
 
     /// Background task that periodically checks for ready delayed messages and sends them.
+    ///
+    /// WAL access is obtained via [`WorkerRegistry::global`].
     pub async fn run_delay_scheduler() {
         let router = TopicRouter::global();
         loop {
             let ready_records = {
-                let wal = router.wal.read().await;
-                wal.fetch_ready().await.unwrap_or_default()
+                let wr = WorkerRegistry::global();
+                let wal = match wr.wal() {
+                    Some(w) => w,
+                    None => {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                };
+                let guard = wal.read().await;
+                guard.fetch_ready().await.unwrap_or_default()
             };
 
             for record in ready_records {

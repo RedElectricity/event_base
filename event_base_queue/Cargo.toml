@@ -16,3 +16,4 @@ async-trait = "0.1.89"
 tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1.23.3", features = ["v4"] }
 tokio-mpmc = "0.2.4"
+crossfire = { version = "3.1.18", features = ["tokio"] }

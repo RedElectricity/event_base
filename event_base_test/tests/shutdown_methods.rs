@@ -131,8 +131,8 @@ fn shutdown_ack_serialization() {
         timestamp: SystemTime::now(),
         error: None,
     };
-    let json = serde_json::to_vec(&ack).expect("serialize should succeed");
-    let decoded: ShutdownAck = serde_json::from_slice(&json).expect("deserialize should succeed");
+    let bytes = bincode::encode_to_vec(&ack, bincode::config::standard()).expect("serialize should succeed");
+    let decoded: ShutdownAck = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize should succeed").0;
     assert_eq!(decoded.worker_name, "worker-b");
     assert!(matches!(decoded.status, ShutdownStatus::Completed));
     assert!(decoded.error.is_none());

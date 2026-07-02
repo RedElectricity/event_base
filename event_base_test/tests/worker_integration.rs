@@ -222,7 +222,7 @@ async fn worker_and_router_and_shutdown_integration() {
 
     let _ = WorkerRegistry::init(Some(wal_handle.clone())).await;
     let global_producer = Arc::new(RecordingProducer::default());
-    let _ = TopicRouter::init(wal_handle.clone(), global_producer);
+    let _ = TopicRouter::init(global_producer);
     TopicRouter::global().register_topic("test-topic").await;
 
     let _ = event_base_core::audit::AuditManager::init(16);

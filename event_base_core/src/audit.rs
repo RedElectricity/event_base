@@ -10,13 +10,14 @@ use futures::future::join_all;
 use ringbuf::HeapRb;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::RingBuffer;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 
 /// A single audit record describing an event in the message lifecycle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct AuditRecord {
     /// Unique identifier of the message being audited.
     pub message_id: String,
@@ -37,7 +38,7 @@ pub struct AuditRecord {
 }
 
 /// Classification of audit events.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum AuditEventType {
     /// Message was enqueued.
     Enqueued,
@@ -52,7 +53,7 @@ pub enum AuditEventType {
 }
 
 /// Outcome of a processing attempt.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum AuditResult {
     /// Processing has begun (no final outcome yet).
     Start,

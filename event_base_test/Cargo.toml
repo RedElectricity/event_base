@@ -5,13 +5,13 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1.89"
-event_base_core = { path = "../event_base_core" }
-event_base_queue = { path = "../event_base_queue" }
-event_base_wal = { path = "../event_base_wal" }
+event_base_core = {path = "../event_base_core"}
+event_base_queue = {path = "../event_base_queue"}
+event_base_wal = {path = "../event_base_wal"}
 tokio = { version = "1.52.3", features = ["full"] }
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion = "0.8.2"
 serde_json = "1.0.150"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"

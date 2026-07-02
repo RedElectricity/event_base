@@ -21,8 +21,8 @@ pub struct WorkerDiscoveryHandler {}
 impl EHandler for WorkerDiscoveryHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
         let info: WorkerDiscoveryMessage =
-            match serde_json::from_slice::<WorkerDiscoveryMessage>(msg.payload.0.as_slice()) {
-                Ok(msg) => msg,
+            match bincode::decode_from_slice::<WorkerDiscoveryMessage, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
+                Ok((msg, _)) => msg,
                 Err(e) => {
                     eprintln!(
                         "[WORKER DISCOVERY]Failed to deserialize WorkerDiscoveryMessage: {}",
@@ -54,8 +54,8 @@ pub struct WorkerHeartbeatHandler {}
 impl EHandler for WorkerHeartbeatHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
         let heartbeat: WorkerHeartbeatMessage =
-            match serde_json::from_slice::<WorkerHeartbeatMessage>(msg.payload.0.as_slice()) {
-                Ok(msg) => msg,
+            match bincode::decode_from_slice::<WorkerHeartbeatMessage, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
+                Ok((msg, _)) => msg,
                 Err(e) => {
                     eprintln!(
                         "[WORKER HEARTBEAT]Failed to deserialize WorkerHeartbeatMessage: {}",

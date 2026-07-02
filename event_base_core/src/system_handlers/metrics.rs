@@ -20,8 +20,8 @@ pub struct MetricsHandler {}
 impl EHandler for MetricsHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
         let info: NodeMetrics =
-            match serde_json::from_slice::<NodeMetrics>(msg.payload.0.as_slice()) {
-                Ok(msg) => msg,
+            match bincode::decode_from_slice::<NodeMetrics, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
+                Ok((msg, _)) => msg,
                 Err(e) => {
                     eprintln!("[METRICS]Failed to deserialize NodeMetrics: {}", e);
                     return Ack::Ack;

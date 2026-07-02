@@ -89,9 +89,9 @@ pub struct ShutdownAckHandler;
 #[async_trait]
 impl EHandler for ShutdownAckHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let ack = serde_json::from_slice::<ShutdownAck>(&msg.payload.0);
+        let ack = bincode::decode_from_slice::<ShutdownAck, _>(&msg.payload.0, bincode::config::standard());
 
-        if let Ok(ack) = ack {
+        if let Ok((ack, _)) = ack {
             WorkerRegistry::global()
                 .unregister(&ack.worker_name)
                 .await

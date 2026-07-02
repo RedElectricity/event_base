@@ -4,6 +4,7 @@
 //! how workers should be terminated, the `ShutdownCommand` envelope, and
 //! the `ShutdownAck` response that workers send back.
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -60,7 +61,7 @@ pub struct ShutdownCommand {
 }
 
 /// An acknowledgment sent by a worker after it has completed shutdown.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct ShutdownAck {
     /// Name of the worker that is acknowledging.
     pub worker_name: String,
@@ -73,7 +74,7 @@ pub struct ShutdownAck {
 }
 
 /// The final status of a worker's shutdown.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum ShutdownStatus {
     /// Shutdown completed successfully.
     Completed,

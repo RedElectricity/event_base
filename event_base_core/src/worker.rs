@@ -270,12 +270,12 @@ impl Worker {
     async fn send_audit_msg(&self, msg: AuditRecord) -> Result<(), CoreError> {
         let audit_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_AUDIT.to_string()),
-            MessagePayload(serde_json::to_vec(&msg)?),
+            MessagePayload(bincode::encode_to_vec(&msg, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
             Standard,
             None,
         );
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_AUDIT, audit_msg, None, None)
+            .send_system(audit_msg, None, None)
             .await?;
 
         Ok(())
@@ -359,7 +359,7 @@ impl Worker {
 
         let ack_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_SHUTDOWN_ACK.to_string()),
-            MessagePayload(serde_json::to_vec(&ack)?),
+            MessagePayload(bincode::encode_to_vec(&ack, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
             Standard,
             None,
         );

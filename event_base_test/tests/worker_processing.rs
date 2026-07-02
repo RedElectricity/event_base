@@ -157,7 +157,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     let wal_handle: Arc<RwLock<Box<dyn Wal>>> = Arc::new(RwLock::new(Box::new(fake_wal.clone())));
     let _ = WorkerRegistry::init(Some(wal_handle.clone())).await;
     let gp = Arc::new(RecordingProducer::default());
-    let _ = TopicRouter::init(wal_handle, gp.clone());
+    let _ = TopicRouter::init(gp.clone());
     let _ = AuditManager::init(32);
     let _ = event_base_core::metrics::manager::MetricsManager::init();
     let _ = event_base_core::metrics::node_store::MetricsStore::init();
@@ -188,20 +188,22 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         .iter()
         .skip(bw)
         .filter(|x| {
-            serde_json::from_slice::<WalSyncMessage>(&x.payload.0)
-                .map_or(false, |s| s.message_id == mid)
+            bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
+                .map_or(false, |(s, _)| s.message_id == mid)
         })
         .collect();
     assert_eq!(ours.len(), 2);
     assert!(ours.iter().any(|x| {
-        serde_json::from_slice::<WalSyncMessage>(&x.payload.0)
+        bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
             .unwrap()
+            .0
             .status
             == WalRecordState::Processing
     }));
     assert!(ours.iter().any(|x| {
-        serde_json::from_slice::<WalSyncMessage>(&x.payload.0)
+        bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
             .unwrap()
+            .0
             .status
             == WalRecordState::Complete
     }));

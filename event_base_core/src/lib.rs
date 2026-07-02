@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -28,7 +29,7 @@ static NODE_NAME: OnceLock<Arc<String>> = OnceLock::new();
 static NODE_TYPE: RwLock<Option<Arc<NodeType>>> = RwLock::new(None);
 
 /// The role of a node in the system.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
     /// A host node that coordinates workers, manages the WAL, and handles
     /// system‑level control topics.

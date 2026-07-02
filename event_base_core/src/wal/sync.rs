@@ -11,11 +11,11 @@ use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::topic::TopicRouter;
 use crate::wal::wal::WalRecordState;
 use crate::wal::wal::WalRecordState::{Complete, Failed, Pending, Processing};
-use serde::{Deserialize, Serialize};
+use bincode::{Decode, Encode};
 use std::time::SystemTime;
 
 /// A message sent from a worker to update the status of a message in the WAL.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct WalSyncMessage {
     /// ID of the message whose status is being updated.
     pub message_id: String,
@@ -69,7 +69,8 @@ impl WalClient {
             timestamp: SystemTime::now(),
         };
 
-        let payload = serde_json::to_vec(&sync_msg)?;
+        let payload = bincode::encode_to_vec(&sync_msg, bincode::config::standard())
+            .map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?;
 
         let msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_WAL_SYNC.to_string()),
@@ -78,7 +79,7 @@ impl WalClient {
             None,
         );
         TopicRouter::global()
-            .send(SYSTEM_TOPIC_WAL_SYNC, msg, None, None)
+            .send_system(msg, None, None)
             .await?;
         Ok(())
     }

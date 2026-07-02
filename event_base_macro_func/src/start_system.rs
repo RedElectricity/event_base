@@ -60,7 +60,7 @@ pub async fn start_system_impl(
 
     let wal_init = Arc::new(RwLock::new(wal));
     let global_producer = factory.create_global_producer()?;
-    TopicRouter::init(wal_init.clone(), global_producer)?;
+    TopicRouter::init(global_producer)?;
 
     let main_consumer = factory.create_main_consumer()?;
     ConsumerRouter::init(main_consumer, factory)?;
@@ -87,9 +87,9 @@ pub async fn start_system_impl(
     let topics_discovery_msg = EMessage::new(
         MessageTopic(SYSTEM_TOPIC_TOPIC_DISCOVERY.to_string()),
         MessagePayload(
-            serde_json::to_vec(&TopicDiscoveryMessage {
+            bincode::encode_to_vec(&TopicDiscoveryMessage {
                 has_topics: router.list_topics().await,
-            })
+            }, bincode::config::standard())
             .unwrap_or_default(),
         ),
         Standard,

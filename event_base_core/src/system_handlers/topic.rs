@@ -12,18 +12,19 @@ use crate::message::DeliveryMode::Standard;
 use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::topic::TopicRouter;
 use async_trait::async_trait;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Message sent by a worker to discover topics from the host.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct TopicDiscoveryMessage {
     /// The list of topics the sender already knows about.
     pub has_topics: Vec<String>,
 }
 
 /// Message used to synchronize the full topic list.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct TopicSyncMessage {
     /// The full list of topics to sync.
     pub topics: Vec<String>,
@@ -38,8 +39,8 @@ pub struct TopicDiscovery {}
 #[async_trait]
 impl EHandler for TopicDiscovery {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let topics: TopicDiscoveryMessage = match serde_json::from_slice(&msg.payload.0) {
-            Ok(r) => r,
+        let topics: TopicDiscoveryMessage = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+            Ok((r, _)) => r,
             Err(e) => {
                 tracing::error!("Failed to deserialize topic discovery message: {}", e);
                 return Ack::Ack;
@@ -58,9 +59,9 @@ impl EHandler for TopicDiscovery {
         let topics_sync_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_TOPIC_SYNC.to_string()),
             MessagePayload(
-                serde_json::to_vec(&TopicSyncMessage {
+                bincode::encode_to_vec(&TopicSyncMessage {
                     topics: topic_router.list_topics().await,
-                })
+                }, bincode::config::standard())
                 .unwrap_or_default(),
             ),
             Standard,
@@ -91,8 +92,8 @@ impl EHandler for TopicSync {
         if get_node_type() == Arc::from(Host) {
             return Ack::Ack;
         }
-        let topics: TopicSyncMessage = match serde_json::from_slice(&msg.payload.0) {
-            Ok(r) => r,
+        let topics: TopicSyncMessage = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+            Ok((r, _)) => r,
             Err(e) => {
                 tracing::error!("Failed to deserialize topic sync message: {}", e);
                 return Ack::Ack;

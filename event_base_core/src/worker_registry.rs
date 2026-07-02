@@ -26,14 +26,14 @@ pub struct WorkerInfo {
 }
 
 /// Message format for worker heartbeat.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct WorkerHeartbeatMessage {
     pub worker_name: String,
     pub timestamp: SystemTime,
 }
 
 /// Message format for worker discovery (registration).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct WorkerDiscoveryMessage {
     pub worker_name: String,
     pub topic: String,
@@ -78,6 +78,11 @@ impl WorkerRegistry {
             .get()
             .expect("WorkerRegistry is not initialized")
             .clone()
+    }
+
+    /// Returns a reference to the global WAL, if one was provided during init.
+    pub fn wal(&self) -> Option<Arc<RwLock<Box<dyn Wal>>>> {
+        self.wal.clone()
     }
 
     /// Registers a new worker or updates an existing one.

@@ -8,27 +8,28 @@ use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use crossfire::{mpmc, MAsyncRx, MAsyncTx};
+use crossfire::mpmc::Array;
 use tokio::sync::Mutex;
-use tokio_mpmc::{Receiver, Sender, channel};
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct MpmcProducer {
-    tx: Sender<EMessage>,
+pub struct CrossfireProducer {
+    tx: MAsyncTx<Array<EMessage>>,
 }
 
-pub struct MpmcConsumer {
-    tx: Sender<EMessage>, // for NoAck msg
-    rx: Receiver<EMessage>,
+pub struct CrossfireConsumer {
+    tx: MAsyncTx<Array<EMessage>>, // for NoAck msg
+    rx: MAsyncRx<Array<EMessage>>,
     pending: Arc<Mutex<HashMap<String, EMessage>>>,
 }
 
 // Left for test use
-pub fn memory_queue(capacity: usize) -> (MpmcProducer, MpmcConsumer) {
-    let (tx, rx) = channel(capacity);
+pub fn memory_queue(capacity: usize) -> (CrossfireProducer, CrossfireConsumer) {
+    let (tx, rx) = mpmc::bounded_async::<EMessage>(capacity);
     (
-        MpmcProducer { tx: tx.clone() },
-        MpmcConsumer {
+        CrossfireProducer { tx: tx.clone() },
+        CrossfireConsumer {
             tx,
             rx,
             pending: Arc::new(Mutex::new(HashMap::default())),
@@ -37,7 +38,7 @@ pub fn memory_queue(capacity: usize) -> (MpmcProducer, MpmcConsumer) {
 }
 
 #[async_trait]
-impl EProducer for MpmcProducer {
+impl EProducer for CrossfireProducer {
     async fn send(&self, e: EMessage) -> Result<(), CoreError> {
         if let Err(e) = self.tx.send(e).await {
             return Err(CoreError::from(QueueError::Send(e.to_string())));
@@ -56,14 +57,14 @@ impl EProducer for MpmcProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        tokio::time::timeout(timeout,
+        tokio::time::timeout(timeout, 
                              self.send(msg))
             .await.unwrap_or_else(|_elapsed| Err(CoreError::from(QueueError::Timeout)))
     }
 }
 
 #[async_trait]
-impl EConsumer for MpmcConsumer {
+impl EConsumer for CrossfireConsumer {
     async fn receive(&mut self) -> Option<EMessage> {
         let msg = self.rx.recv().await;
         if let Ok(msg) = msg {
@@ -74,10 +75,7 @@ impl EConsumer for MpmcConsumer {
 
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError> {
         let msg = match self.rx.recv().await {
-            Ok(Some(m)) => m,
-            Ok(None) => {
-                return Ok(None);
-            }
+            Ok(m) => m,
             Err(_) => return Ok(None),
         };
 
@@ -111,12 +109,12 @@ impl EConsumer for MpmcConsumer {
 }
 
 pub struct MemoryConsumerFactory {
-    tx: Sender<EMessage>,
-    rx: Receiver<EMessage>,
+    tx: MAsyncTx<Array<EMessage>>,
+    rx: MAsyncRx<Array<EMessage>>,
 }
 
 impl MemoryConsumerFactory {
-    pub fn new(tx: Sender<EMessage>, rx: Receiver<EMessage>) -> Self {
+    pub fn new(tx: MAsyncTx<Array<EMessage>>, rx: MAsyncRx<Array<EMessage>>) -> Self {
         Self { tx, rx }
     }
 }
@@ -124,7 +122,7 @@ impl MemoryConsumerFactory {
 #[async_trait]
 impl ConsumerFactory for MemoryConsumerFactory {
     fn create_consumer(&self) -> Box<dyn EConsumer> {
-        Box::new(MpmcConsumer {
+        Box::new(CrossfireConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
             pending: Arc::new(Mutex::new(HashMap::default())),
@@ -141,13 +139,13 @@ impl ConsumerFactory for MemoryConsumerFactory {
 
 // ---------- Queue Factory ----------
 pub struct MemoryQueueFactory {
-    tx: Sender<EMessage>,
-    rx: Receiver<EMessage>,
+    tx: MAsyncTx<Array<EMessage>>,
+    rx: MAsyncRx<Array<EMessage>>,
 }
 
 impl MemoryQueueFactory {
     pub fn new(capacity: usize) -> Self {
-        let (tx, rx) = channel(capacity);
+        let (tx, rx) = mpmc::bounded_async::<EMessage>(capacity);
         Self { tx, rx }
     }
 }
@@ -158,7 +156,7 @@ impl QueueFactory for MemoryQueueFactory {
         &self,
         _topic: &str,
     ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), CoreError> {
-        let producer = Arc::new(MpmcProducer {
+        let producer = Arc::new(CrossfireProducer {
             tx: self.tx.clone(),
         });
         let consumer_factory =
@@ -167,13 +165,13 @@ impl QueueFactory for MemoryQueueFactory {
     }
 
     fn create_global_producer(&self) -> Result<Arc<dyn EProducer>, CoreError> {
-        Ok(Arc::new(MpmcProducer {
+        Ok(Arc::new(CrossfireProducer {
             tx: self.tx.clone(),
         }))
     }
 
     fn create_main_consumer(&self) -> Result<Arc<Mutex<dyn EConsumer>>, CoreError> {
-        Ok(Arc::new(Mutex::new(MpmcConsumer {
+        Ok(Arc::new(Mutex::new(CrossfireConsumer {
             tx: self.tx.clone(),
             rx: self.rx.clone(),
             pending: Arc::new(Default::default()),

@@ -36,25 +36,28 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
     let handler_struct_ident = syn::Ident::new(&handler_struct_name, fn_name.span());
 
     // Generate the pipeline construction code based on middleware argument.
+    // Uses `Box::new(#handler_struct_ident)` instead of `handler` to avoid
+    // forward-reference issues and type mismatch (Pipeline::new expects Box).
     let pipeline_code = match &middleware {
         Some(mw_expr) => {
             if let Expr::Array(arr) = mw_expr {
                 // If an array is provided, chain multiple middlewares.
                 let with_calls = arr.elems.iter().map(|elem| {
-                    quote! { pipeline = pipeline.with(#elem); }
+                    quote! { p = p.with(#elem); }
                 });
                 quote! {{
-                    let mut pipeline = Pipeline::new(handler);
+                    let mut p = Pipeline::new(Box::new(#handler_struct_ident));
                     #(#with_calls)*
+                    p
                 }}
             } else {
                 // Single middleware.
-                quote! { Pipeline::new(handler).with(#mw_expr) }
+                quote! { Pipeline::new(Box::new(#handler_struct_ident)).with(#mw_expr) }
             }
         }
         None => {
             // No middleware.
-            quote! { Pipeline::new(handler) }
+            quote! { Pipeline::new(Box::new(#handler_struct_ident)) }
         }
     };
 
@@ -84,9 +87,9 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
             shutdown_tx: event_base_core::shutdown::ShutdownSender,
         ) -> Result<(), event_base_core::error::CoreError> {
             use event_base_core::topic::TopicRouter;
+            use event_base_core::queues::consumer_router::ConsumerRouter;
+            use event_base_core::middleware::Pipeline;
             use std::sync::Arc;
-
-            #pipeline_code
 
             let handler = Arc::new(#handler_struct_ident);
             let router = TopicRouter::global();
@@ -95,11 +98,16 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
             cr.register(&*#topic, handler).await?;
             router.register_topic(&*#topic).await?;
 
+            // Build the pipeline (wrapped in Arc so it can be cloned for each worker).
+            let pipeline = Arc::new(
+                #pipeline_code
+            );
+
             // Create the specified number of workers.
-            for i in 0..#workers {
+            for _i in 0..#workers {
                 let worker = cr.create_worker(
                     #topic,
-                    pipeline,
+                    pipeline.clone(),
                     #timeout.map(std::time::Duration::from_secs),
                     #shutdown_timeout.map(std::time::Duration::from_secs),
                     #shutdown_check_interval.map(std::time::Duration::from_millis),

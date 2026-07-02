@@ -97,7 +97,7 @@ async fn core_workflow_covers_global_paths() {
     WorkerRegistry::init(Some(wal_handle.clone()))
         .await
         .expect("worker registry should initialize");
-    TopicRouter::init(wal_handle.clone(), producer.clone())
+    TopicRouter::init(producer.clone())
         .expect("topic router should initialize");
 
     eprintln!("stage: router setup");
@@ -259,7 +259,7 @@ async fn core_workflow_covers_global_paths() {
     let audit_event = audit_record("audit-1", "orders", AuditEventType::Enqueued);
     let audit_message = message(
         "_system.audit",
-        &serde_json::to_vec(&audit_event).expect("audit event should serialize"),
+        &bincode::encode_to_vec(&audit_event, bincode::config::standard()).expect("audit event should serialize"),
         DeliveryMode::Standard,
     );
     assert!(matches!(

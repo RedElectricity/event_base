@@ -47,12 +47,12 @@ async fn topic_router_full_lifecycle() {
     WorkerRegistry::init(Some(wal_handle.clone()))
         .await
         .expect("worker registry init should succeed");
-    TopicRouter::init(wal_handle.clone(), producer.clone())
+    TopicRouter::init(producer.clone())
         .expect("topic router init should succeed");
 
     // ---- init failure on double init ----
     let producer2 = Arc::new(RecordingProducer::default());
-    let result = TopicRouter::init(wal_handle, producer2);
+    let result = TopicRouter::init(producer2);
     assert!(matches!(result, Err(CoreError::AlreadyInitialized)));
 
     let router = TopicRouter::global();
