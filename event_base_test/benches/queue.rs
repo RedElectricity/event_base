@@ -116,7 +116,29 @@ impl QueueFactory for NoopQF {
     }
 }
 
+// ── Lock-free producer for benchmark (drops messages to avoid Mutex contention) ──
+
+struct BenchProducer;
+#[async_trait]
+impl EProducer for BenchProducer {
+    async fn send(&self, _msg: EMessage) -> Result<(), event_base_core::error::CoreError> {
+        Ok(())
+    }
+    async fn try_send(&self, _msg: EMessage) -> Result<(), event_base_core::error::CoreError> {
+        Ok(())
+    }
+    async fn send_timeout(
+        &self,
+        _msg: EMessage,
+        _timeout: Duration,
+    ) -> Result<(), event_base_core::error::CoreError> {
+        Ok(())
+    }
+}
+
 // ── System setup (once per process) ──────────────────────────────────────────
+
+static BENCH_PRODUCER: std::sync::OnceLock<Arc<dyn EProducer>> = std::sync::OnceLock::new();
 
 fn system_init() {
     SYSTEM_INIT.call_once(|| {
@@ -127,18 +149,23 @@ fn system_init() {
         let wal: Arc<tokio::sync::RwLock<Box<dyn Wal>>> =
             Arc::new(tokio::sync::RwLock::new(Box::new(fake_wal)));
 
+        let bp = Arc::new(BenchProducer);
+
+        let qf = Arc::new(event_base_queue::flume::MemoryQueueFactory::new(1_000_000));
+        let producer = qf.create_global_producer().expect("global producer");
+        let main_consumer = qf.create_main_consumer().expect("main consumer");
+
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let _ = WorkerRegistry::init(Some(wal.clone())).await;
-            let gp = Arc::new(RecordingProducer::default());
-            let _ = TopicRouter::init(gp.clone());
+            let _ = TopicRouter::init(bp.clone());
             let _ = AuditManager::init(1024);
             let _ = event_base_core::metrics::manager::MetricsManager::init();
             let _ = event_base_core::metrics::node_store::MetricsStore::init();
-            let f = Arc::new(NoopQF { p: gp });
-            let mc = f.create_main_consumer().unwrap();
-            let _ = ConsumerRouter::init(mc, f);
+            ConsumerRouter::init(main_consumer, qf, None).expect("CR init");
         });
+
+        BENCH_PRODUCER.set(producer).ok();
     });
 }
 
@@ -479,79 +506,162 @@ fn bench_worker_process_parallel(
     group.finish();
 }
 
-/// Helper: benchmark full pipeline — queue claim + pipeline.run() + ack, per
-/// queue impl, with `worker_count` parallel workers each using its own queue.
-///
-/// This exercises the real dequeue (claim/ack) + handler processing path.
-/// Message payload is empty since we measure throughput.
-macro_rules! bench_full_pipeline_one {
-    ($group:ident, $label:expr, $module:ident, $rt:expr, $msgs:expr, $worker_count:expr, $pipeline:expr) => {{
-        let pipeline = $pipeline;
-        $group.bench_function(BenchmarkId::new($label, $msgs.len()), |b| {
+// ── Full pipeline through real ConsumerRouter ──
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+struct CountingHandler(Arc<AtomicU64>);
+#[async_trait]
+impl EHandler for CountingHandler {
+    async fn handler(&self, _msg: &EMessage) -> Ack {
+        self.0.fetch_add(1, Ordering::Relaxed);
+        Ack::Ack
+    }
+}
+
+/// Benchmarks the real CR dispatch path using flume MemoryQueueFactory.
+/// CR is already initialized in `system_init()`.
+fn bench_full_pipeline_cr(c: &mut Criterion, worker_count: usize) {
+    system_init();
+    let rt = Runtime::new().unwrap();
+    let total = PROCESS_COUNT as usize;
+    let count = Arc::new(AtomicU64::new(0));
+
+    let topic = format!("bench-cr-{}w", worker_count);
+    let cr = ConsumerRouter::global();
+
+    rt.block_on(async {
+        // Register + create workers only if not already done (OnceLock pattern)
+        cr.register(&topic, Arc::new(CountingHandler(count.clone()))).await
+            .or_else(|e| {
+                if matches!(&e, event_base_core::error::CoreError::Topic(event_base_core::error::topic::TopicError::AlreadyExists(_))) {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            }).expect("register topic");
+        // Check if workers already exist for this topic
+        let existing = cr.get_workers(&topic).await;
+        if existing.is_empty() {
+            for _ in 0..worker_count {
+                cr.create_worker(&topic, Arc::new(Pipeline::new(Box::new(CountingHandler(count.clone())))), None, None, None)
+                    .await
+                    .expect("create worker");
+            }
+        }
+    });
+
+    // Spawn CR's recv loop in background
+    // Spawn CR's recv loop only once
+    static CR_RECV_SPAWNED: std::sync::Once = std::sync::Once::new();
+    CR_RECV_SPAWNED.call_once(|| {
+        let cr_recv = ConsumerRouter::global();
+        std::thread::spawn(move || {
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                let _ = cr_recv.recv().await;
+            });
+        });
+    });
+
+    // Pre‑create messages
+    let all_msgs = pre_create(total as u64);
+    let producer = BENCH_PRODUCER.get().expect("BENCH_PRODUCER not set");
+
+    let mut group = c.benchmark_group("system_full_pipeline_cr");
+    group.throughput(Throughput::Elements(total as u64));
+
+    group.bench_function(BenchmarkId::new(format!("{}w", worker_count), total), |b| {
+        b.iter_custom(|iters| {
+            let count = count.clone();
+            let msgs = all_msgs.clone();
+            let producer = producer.clone();
+            rt.block_on(async move {
+                let mut total_dur = Duration::ZERO;
+                for _ in 0..iters {
+                    count.store(0, Ordering::Relaxed);
+                    let start = std::time::Instant::now();
+                    for m in &msgs {
+                        producer.send(m.clone()).await.expect("send");
+                    }
+                    while count.load(Ordering::Relaxed) < total as u64 {
+                        tokio::time::sleep(Duration::from_micros(100)).await;
+                    }
+                    total_dur += start.elapsed();
+                }
+                total_dur
+            })
+        });
+    });
+    group.finish();
+}
+
+// ── Full pipeline — all three backends (not via global CR singleton) ──
+
+macro_rules! bench_full_pipeline_backend_one {
+    ($group:ident, $label:expr, $module:ident, $rt:expr, $worker_count:expr) => {{
+        let total = PROCESS_COUNT as usize;
+        let n_per_worker = total / $worker_count;
+        let all_msgs = pre_create(total as u64);
+        let pipeline = Arc::new(Pipeline::new(Box::new(AckHandler)));
+
+        let all_msgs = all_msgs; // move out of macro capture
+        $group.bench_function(BenchmarkId::new($label, total), |b| {
             b.iter_custom(|iters| {
-                let msgs = $msgs.clone();
                 let pipeline = pipeline.clone();
+                let all_msgs = all_msgs.clone();
                 $rt.block_on(async move {
-                    let mut total = Duration::ZERO;
+                    let mut total_dur = Duration::ZERO;
                     for _ in 0..iters {
-                        let chunk_size = msgs.len() / $worker_count;
-                        let mut handles = vec![];
+                        // Setup: create per-worker queues
+                        let mut worker_rxs = Vec::with_capacity($worker_count);
+                        let mut worker_txs = Vec::with_capacity($worker_count);
+                        for _ in 0..$worker_count {
+                            let (tx, rx) = $module::memory_queue(n_per_worker + 1024);
+                            worker_txs.push(tx);
+                            worker_rxs.push(rx);
+                        }
 
-                        for i in 0..$worker_count {
-                            let start = i * chunk_size;
-                            let end = if i == $worker_count - 1 {
-                                msgs.len()
-                            } else {
-                                start + chunk_size
-                            };
-                            let chunk: Vec<EMessage> = msgs[start..end].to_vec();
+                        // Dispatch: distribute round‑robin
+                        for (i, m) in all_msgs.iter().enumerate() {
+                            worker_txs[i % $worker_count]
+                                .send(m.clone())
+                                .await
+                                .expect("dispatch");
+                        }
 
-                            let (p, mut c) = $module::memory_queue(chunk.len() + 1024);
-                            for m in &chunk {
-                                p.send(m.clone()).await.expect("send");
-                            }
-
+                        // Timed: workers receive + pipeline.run
+                        let start = std::time::Instant::now();
+                        let mut handles = Vec::with_capacity($worker_count);
+                        for mut rx in worker_rxs {
                             let pipeline = pipeline.clone();
                             handles.push(tokio::spawn(async move {
-                                for _ in 0..chunk.len() {
-                                    let claimed = c
-                                        .claim()
-                                        .await
-                                        .expect("claim")
-                                        .expect("non‑empty");
-                                    let mut msg = claimed.message;
+                                for _ in 0..n_per_worker {
+                                    let mut msg = rx.receive().await.expect("receive");
                                     pipeline.run(&mut msg).await;
-                                    c.ack(&claimed.claim_id).await.expect("ack");
                                 }
                             }));
                         }
-
-                        let start = std::time::Instant::now();
                         for h in handles {
                             h.await.unwrap();
                         }
-                        total += start.elapsed();
+                        total_dur += start.elapsed();
                     }
-                    total
+                    total_dur
                 })
             });
         });
     }};
 }
 
-/// Full pipeline benchmark — queue claim + pipeline.run() + ack, per queue impl.
-fn bench_full_pipeline(c: &mut Criterion) {
+fn bench_full_pipeline_backends(c: &mut Criterion, worker_count: usize) {
     let rt = Runtime::new().unwrap();
-    let mut group = c.benchmark_group("system_full_pipeline");
+    let mut group = c.benchmark_group(format!("system_full_pipeline_backends_{}w", worker_count));
     group.throughput(Throughput::Elements(PROCESS_COUNT));
 
-    let msgs = pre_create(PROCESS_COUNT);
-    let pipeline = Arc::new(Pipeline::new(Box::new(AckHandler)));
-    let worker_count = 4;
-
-    bench_full_pipeline_one!(group, "flume", flume, rt, msgs, worker_count, pipeline.clone());
-    bench_full_pipeline_one!(group, "mpmc", mpmc, rt, msgs, worker_count, pipeline.clone());
-    bench_full_pipeline_one!(group, "crossfire", crossfire, rt, msgs, worker_count, pipeline);
+    bench_full_pipeline_backend_one!(group, "flume", flume, rt, worker_count);
+    bench_full_pipeline_backend_one!(group, "mpmc", mpmc, rt, worker_count);
+    bench_full_pipeline_backend_one!(group, "crossfire", crossfire, rt, worker_count);
 
     group.finish();
 }
@@ -586,7 +696,7 @@ fn benchmarks(c: &mut Criterion) {
         Arc::new(Pipeline::new(Box::new(AckHandler)).with(LoggingMiddleware)),
     );
 
-    // ── Multi‑worker parallel benchmarks ──
+    // ── Multi‑worker parallel benchmarks (4 workers) ──
     bench_worker_process_parallel(
         c,
         "handler-only-4w",
@@ -608,8 +718,35 @@ fn benchmarks(c: &mut Criterion) {
         4,
     );
 
-    // ── Queue + handler full pipeline, per impl ──
-    bench_full_pipeline(c);
+    // ── Multi‑worker parallel benchmarks (8 workers) ──
+    bench_worker_process_parallel(
+        c,
+        "handler-only-8w",
+        Arc::new(Pipeline::new(Box::new(AckHandler))),
+        8,
+    );
+
+    bench_worker_process_parallel(
+        c,
+        "handler+cpu-8w",
+        Arc::new(Pipeline::new(Box::new(CpuHandler))),
+        8,
+    );
+
+    bench_worker_process_parallel(
+        c,
+        "handler+1mw-8w",
+        Arc::new(Pipeline::new(Box::new(AckHandler)).with(LoggingMiddleware)),
+        8,
+    );
+
+    // ── CR dispatch: real ConsumerRouter with CountingHandler ──
+    bench_full_pipeline_cr(c, 4);
+    bench_full_pipeline_cr(c, 8);
+
+    // ── Full pipeline — all three backends (not via global CR singleton) ──
+    bench_full_pipeline_backends(c, 4);
+    bench_full_pipeline_backends(c, 8);
 }
 
 criterion_group!(benches, benchmarks);

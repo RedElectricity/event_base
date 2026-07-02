@@ -192,6 +192,59 @@ event_base/                     # Umbrella crate — re-exports all public APIs
 
 ---
 
+---
+
+## ConsumerRouter batch dispatch
+
+`ConsumerRouter` uses **batch claiming** to reduce lock contention in the dispatch loop. Instead of claiming one message at a time, it collects up to `batch_size` messages in a single `claim_batch()` call, dispatches them all, then acknowledges the batch in one lock acquisition.
+
+```
+loop {
+    consumer.lock()                        // one lock per batch
+    batch = consumer.claim_batch(N)        // one pending-lock per batch
+    consumer.unlock()
+
+    for msg in batch {                     // dispatch (lock-free)
+        worker = select_idle_worker(topic)
+        worker.producer.send(msg.clone())
+    }
+
+    consumer.lock()                        // one lock for all acks
+    for msg in batch { consumer.ack(id) }
+    consumer.unlock()
+}
+```
+
+### Configurable batch size
+
+The batch size is set at initialization and defaults to 64:
+
+```rust
+ConsumerRouter::init(consumer, factory, None)?;           // default 64
+ConsumerRouter::init(consumer, factory, Some(128))?;      // custom
+```
+
+### Batch-friendly trait method
+
+Each queue backend should override `EConsumer::claim_batch()` for optimal performance. The optimized version acquires the internal pending-map lock once for the entire batch:
+
+```rust
+// Default (calls claim() in a loop — one pending-lock per message)
+async fn claim_batch(&mut self, max: usize) -> Result<Vec<ClaimedMessage>, CoreError>
+
+// Optimized (flume, mpmc, crossfire — single pending-lock + try_recv loop)
+```
+
+The default implementation on the trait falls back to calling `claim()` in a loop, which is correct but slower.
+
+---
+
+## System message template caching
+
+`Worker` and `WalClient` cache `EMessage` templates for system topics (`_system.audit`, `_system.wal_sync`) to avoid re-creating fixed fields (topic, delivery mode, `to_worker`, default metadata) on every message. Each `process_msg` call sends 4 system messages (2 audit + 2 WAL sync); the templates reduce this overhead by cloning a pre-built message and only replacing the payload + UUID.
+
+---
+
 ## Global singletons
 
 The system uses several global singletons (initialized once at startup):

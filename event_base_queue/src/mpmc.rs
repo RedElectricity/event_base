@@ -91,6 +91,30 @@ impl EConsumer for MpmcConsumer {
         }))
     }
 
+    async fn claim_batch(&mut self, max: usize) -> Result<Vec<ClaimedMessage>, CoreError> {
+        if max == 0 || self.rx.is_empty() {
+            return Ok(Vec::new());
+        }
+        let limit = max.min(self.rx.len());
+        let mut batch = Vec::with_capacity(limit);
+        let mut pending = self.pending.lock().await;
+        for _ in 0..limit {
+            match self.rx.recv().await {
+                Ok(Some(msg)) => {
+                    let claim_id = Uuid::new_v4().to_string();
+                    pending.insert(claim_id.clone(), msg.clone());
+                    batch.push(ClaimedMessage {
+                        message: msg,
+                        claim_id,
+                        claimed_at: SystemTime::now(),
+                    });
+                }
+                _ => break,
+            }
+        }
+        Ok(batch)
+    }
+
     async fn ack(&mut self, claim_id: &str) -> Result<(), CoreError> {
         let mut pending = self.pending.lock().await;
         pending.remove(claim_id);

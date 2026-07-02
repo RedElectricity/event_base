@@ -238,7 +238,7 @@ async fn worker_and_router_and_shutdown_integration() {
     };
     let factory = Arc::new(MockQueueFactory::new(mock_consumer));
     let main_consumer = factory.create_main_consumer().unwrap();
-    let _ = ConsumerRouter::init(main_consumer, factory.clone());
+    let _ = ConsumerRouter::init(main_consumer, factory.clone(), None);
 
     let handler = Arc::new(TestHandler {
         call_count: Arc::new(AtomicUsize::new(0)),

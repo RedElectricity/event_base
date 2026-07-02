@@ -175,11 +175,24 @@ The `ConsumerRouter` is the **dispatch engine**. It runs in its own Tokio task, 
 
 Responsibilities:
 
-- Claim messages from the main consumer
+- Claim messages from the main consumer (in batches)
 - Select the target worker (by `to_worker` or by idle-worker selection)
 - Forward the message to the worker's internal producer
-- Acknowledge (ack) or negatively acknowledge (nack) the claim
+- Acknowledge (ack) or negatively acknowledge (nack) claims (batched)
 - Manage worker lifecycle (create, register, shutdown, delete)
+
+### Batch claim dispatch
+
+Messages are claimed in batches (up to `batch_size`, default 64) to amortise lock contention. The dispatch loop:
+
+1. **Claim**: Lock the main consumer once → claim up to `batch_size` messages → unlock
+2. **Dispatch**: For each message, select a worker and forward (no consumer lock held)
+3. **Ack/nack**: Lock the main consumer once → ack/nack the entire batch → unlock
+
+```rust
+ConsumerRouter::init(consumer, factory, None)?;         // default batch_size = 64
+ConsumerRouter::init(consumer, factory, Some(128))?;    // custom
+```
 
 ### Worker selection logic
 
@@ -187,6 +200,16 @@ Responsibilities:
 1. If msg.to_worker is set → deliver to that specific worker by name
 2. Otherwise → select the first idle worker subscribed to the message's topic
 3. If no idle worker is available → nack the message (it will be re-queued)
+```
+
+### Idle-worker lifecycle
+
+Workers register themselves as idle/working via `ConsumerRouter::set_idle()` / `set_working()`:
+
+```
+Worker starts        → set_idle(worker_name)   → added to idle list
+Worker receives msg  → set_working(worker_name) → removed from idle list
+Worker finishes      → set_idle(worker_name)   → added back to idle list
 ```
 
 ---
@@ -208,15 +231,17 @@ Below is the complete path a message takes through the system:
        │
        ▼
 ┌──────────────────┐
-│  Main Consumer   │  3. ConsumerRouter.recv() claims the message
-│  (dispatch loop) │
+│  Main Consumer   │  3. ConsumerRouter.recv() claims up to
+│  (dispatch loop) │     batch_size messages at once (claim_batch)
 └──────┬───────────┘
        │
        ▼
 ┌──────────────────┐
-│ ConsumerRouter   │  4. Selects a worker for the topic
-│                  │  5. Forwards to worker's internal producer
-│                  │  6. Acks the claim (removes from main queue)
+│ ConsumerRouter   │  4. For each msg in batch: selects a worker
+│                  │     for the topic & forwards to worker's
+│                  │     internal producer
+│                  │  5. Batch-acks all successfully dispatched
+│                  │     claims (single consumer-lock)
 └──────┬───────────┘
        │
        ▼
@@ -239,8 +264,9 @@ Below is the complete path a message takes through the system:
 ### Key design points
 
 - **WAL always first**: Messages are persisted *before* they are enqueued. This guarantees that a crash between enqueue and processing does not lose the message.
-- **Claim-based dispatch**: The main consumer claims a message; if the worker fails before acking the claim, the message becomes available again (depends on queue implementation).
-- **Idle-worker selection**: Messages are load-balanced across workers of the same topic. If all workers are busy, the message is nacked and stays in the queue.
+- **Batch claim dispatch**: The main consumer claims up to `batch_size` messages in a single lock acquisition. The default batch size is 64, configurable via `ConsumerRouter::init()`. Each queue backend can override `EConsumer::claim_batch()` for an optimized single-lock implementation.
+- **Idle-worker selection**: Messages are load-balanced across workers of the same topic. Workers notify the router via `set_idle()`/`set_working()` when they become available or busy. If all workers are busy, the message is nacked and stays in the queue.
+- **System message template caching**: `Worker` and `WalClient` cache `EMessage` templates for `_system.audit` and `_system.wal_sync` topics to avoid re-creating fixed fields (topic, delivery mode) on every audit / WAL sync send.
 
 ---
 

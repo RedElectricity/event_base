@@ -13,6 +13,7 @@ use crate::wal::wal::WalRecordState;
 use crate::wal::wal::WalRecordState::{Complete, Failed, Pending, Processing};
 use bincode::{Decode, Encode};
 use std::time::SystemTime;
+use uuid::Uuid;
 
 /// A message sent from a worker to update the status of a message in the WAL.
 #[derive(Debug, Clone, Encode, Decode)]
@@ -41,12 +42,21 @@ pub struct WalSyncMessage {
 /// state transition of a message.
 pub struct WalClient {
     worker_id: String,
+    template: EMessage, // cached SYSTEM_TOPIC_WAL_SYNC message template
 }
 
 impl WalClient {
     /// Creates a new `WalClient` with the given worker identifier.
     pub fn new(worker_id: String) -> Self {
-        Self { worker_id }
+        Self {
+            worker_id,
+            template: EMessage::new(
+                MessageTopic(SYSTEM_TOPIC_WAL_SYNC.to_string()),
+                MessagePayload(Vec::new()),
+                Standard,
+                None,
+            ),
+        }
     }
 
     /// Internal helper to send a sync message with the given status.
@@ -72,12 +82,9 @@ impl WalClient {
         let payload = bincode::encode_to_vec(&sync_msg, bincode::config::standard())
             .map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?;
 
-        let msg = EMessage::new(
-            MessageTopic(SYSTEM_TOPIC_WAL_SYNC.to_string()),
-            MessagePayload(payload),
-            Standard,
-            None,
-        );
+        let mut msg = self.template.clone();
+        msg.payload = MessagePayload(payload);
+        msg.id = Uuid::new_v4().to_string();
         TopicRouter::global()
             .send_system(msg, None, None)
             .await?;

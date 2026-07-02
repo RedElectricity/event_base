@@ -63,7 +63,7 @@ pub async fn start_system_impl(
     TopicRouter::init(global_producer)?;
 
     let main_consumer = factory.create_main_consumer()?;
-    ConsumerRouter::init(main_consumer, factory)?;
+    ConsumerRouter::init(main_consumer, factory, None)?;
 
     WorkerRegistry::init(Option::from(wal_init.clone())).await?;
 

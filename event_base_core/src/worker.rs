@@ -40,6 +40,8 @@ pub struct Worker {
     pub status: Arc<Mutex<WorkerStatus>>,
     wal: WalClient,
     shutdown_complete: Arc<AtomicBool>,
+    /// Cached audit message template — avoids re‑creating topic / delivery fields.
+    audit_template: EMessage,
 }
 
 /// Possible statuses of a worker.
@@ -79,6 +81,12 @@ impl Worker {
             status: Arc::new(Mutex::new(Idle)),
             wal: WalClient::new(name),
             shutdown_complete: Arc::new(AtomicBool::new(false)),
+            audit_template: EMessage::new(
+                MessageTopic(SYSTEM_TOPIC_AUDIT.to_string()),
+                MessagePayload(Vec::new()),
+                Standard,
+                None,
+            ),
         }
     }
 
@@ -267,17 +275,13 @@ impl Worker {
         }
     }
 
-    async fn send_audit_msg(&self, msg: AuditRecord) -> Result<(), CoreError> {
-        let audit_msg = EMessage::new(
-            MessageTopic(SYSTEM_TOPIC_AUDIT.to_string()),
-            MessagePayload(bincode::encode_to_vec(&msg, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
-            Standard,
-            None,
-        );
-        TopicRouter::global()
-            .send_system(audit_msg, None, None)
-            .await?;
-
+    async fn send_audit_msg(&self, record: AuditRecord) -> Result<(), CoreError> {
+        let payload = bincode::encode_to_vec(&record, bincode::config::standard())
+            .map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?;
+        let mut msg = self.audit_template.clone();
+        msg.payload = MessagePayload(payload);
+        msg.id = Uuid::new_v4().to_string();
+        TopicRouter::global().send_system(msg, None, None).await?;
         Ok(())
     }
 

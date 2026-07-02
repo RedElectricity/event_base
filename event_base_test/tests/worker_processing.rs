@@ -165,7 +165,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         producer: gp.clone(),
     });
     let mc = f.create_main_consumer().unwrap();
-    let _ = ConsumerRouter::init(mc, f);
+    let _ = ConsumerRouter::init(mc, f, None);
     let cr = ConsumerRouter::global();
     let t = "cov";
     let h = Arc::new(StaticHandler { response: Ack::Ack });

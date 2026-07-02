@@ -22,6 +22,8 @@ use tracing::error;
 
 static CONSUMER_ROUTER: OnceLock<Arc<ConsumerRouter>> = OnceLock::new();
 
+const DEFAULT_BATCH_SIZE: usize = 64;
+
 /// The global router that dispatches messages to workers.
 ///
 /// It maintains:
@@ -34,6 +36,7 @@ pub struct ConsumerRouter {
     local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic -> TopicEntry)
     worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name -> (worker, handle))
     idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic -> list of idle worker names)
+    batch_size: usize,
 }
 
 /// Internal entry for a registered topic.
@@ -50,12 +53,14 @@ impl ConsumerRouter {
     /// # Arguments
     /// * `consumer` - The main consumer (wrapped in `Mutex`) that will claim messages.
     /// * `factory` - The queue factory used to create resources.
+    /// * `batch_size` - Maximum messages to claim in one batch. `None` defaults to 64.
     ///
     /// # Errors
     /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init(
         consumer: Arc<Mutex<dyn EConsumer>>,
         factory: Arc<dyn QueueFactory>,
+        batch_size: Option<usize>,
     ) -> Result<(), CoreError> {
         let router = Arc::new(ConsumerRouter {
             consumer,
@@ -63,6 +68,7 @@ impl ConsumerRouter {
             worker_index: RwLock::new(HashMap::new()),
             factory,
             idle_workers: Mutex::new(HashMap::new()),
+            batch_size: batch_size.unwrap_or(DEFAULT_BATCH_SIZE),
         });
         CONSUMER_ROUTER
             .set(router)
@@ -89,69 +95,72 @@ impl ConsumerRouter {
     /// to the worker's producer and acknowledges the claim. If no worker is
     /// available, the message is negatively acknowledged and requeued.
     ///
-    /// # Errors
-    /// Returns `CoreError` if the consumer operation fails unexpectedly.
+    /// Run the CR dispatch loop. Claims up to `self.batch_size` messages per
+    /// batch to amortise lock contention, then dispatches each to the
+    /// appropriate worker.  All acks/nacks for one batch are issued in a
+    /// single lock acquisition.
     pub async fn recv(&self) -> Result<(), CoreError> {
         loop {
-            let mut consumer = self.consumer.lock().await;
-            let claimed = {
-                match consumer.claim().await {
-                    Ok(Some(claimed)) => claimed,
-                    Ok(None) => continue,
+            // ── Batch claim ──
+            let batch = {
+                let mut consumer = self.consumer.lock().await;
+                match consumer.claim_batch(self.batch_size).await {
+                    Ok(b) => b,
                     Err(e) => {
-                        error!("[CONSUMER ROUTER]Consumer claim message failed: {}", e);
+                        error!("[CONSUMER ROUTER]Batch claim failed: {}", e);
                         continue;
                     }
                 }
             };
 
-            let msg = &claimed.message;
-            let claim_id = &claimed.claim_id;
-
-            let local_workers = self.local_topics.read().await;
-
-            if !local_workers.contains_key(&msg.topic.0) {
-                drop(local_workers);
-                consumer.nack(claim_id).await?;
+            if batch.is_empty() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
                 continue;
             }
 
-            let workers = self.worker_index.read().await;
+            // ── Dispatch (consumer lock NOT held) + collect ack/nack IDs ──
+            let mut to_ack: Vec<String> = Vec::with_capacity(batch.len());
+            let mut to_nack: Vec<String> = Vec::with_capacity(4);
 
-            if let Some(target) = &msg.to_worker {
-                if !workers.contains_key(target) {
-                    drop(workers);
-                    consumer.nack(claim_id).await?;
+            for claimed in batch {
+                let msg = &claimed.message;
+                let claim_id = claimed.claim_id.clone();
+
+                if !self.local_topics.read().await.contains_key(&msg.topic.0) {
+                    to_nack.push(claim_id);
                     continue;
                 }
 
-                let (worker, _) = workers.get(target).unwrap();
-                match worker.producer.send(msg.clone()).await {
-                    Ok(_) => {
-                        consumer.ack(claim_id).await?;
-                    }
-                    Err(e) => {
-                        consumer.nack(claim_id).await?;
-                        tracing::error!("Fail to dispatch message:{}", e);
-                    }
-                }
-            } else {
-                let worker = self.select_local_idle_worker(&msg.topic.0).await;
-                if let Some(w) = worker {
-                    match w.producer.send(msg.clone()).await {
-                        Ok(_) => {
-                            consumer.ack(claim_id).await?;
-                        }
+                let worker = if let Some(target) = &msg.to_worker {
+                    let workers = self.worker_index.read().await;
+                    workers.get(target).map(|(w, _)| w.clone())
+                } else {
+                    self.select_local_idle_worker(&msg.topic.0).await
+                };
+
+                match worker {
+                    Some(w) => match w.producer.send(msg.clone()).await {
+                        Ok(_) => to_ack.push(claim_id),
                         Err(e) => {
-                            consumer.nack(claim_id).await?;
+                            to_nack.push(claim_id);
                             tracing::error!("Fail to dispatch message:{}", e);
                         }
+                    },
+                    None => {
+                        to_nack.push(claim_id);
+                        tracing::warn!("No free worker, requeue the message: {}", msg.id);
                     }
-                } else {
-                    drop(workers);
-                    consumer.nack(claim_id).await?;
-                    tracing::warn!("No free worker, requeue the message: {}", &msg.id);
-                    continue;
+                }
+            }
+
+            // ── Batch ack/nack (single consumer lock) ──
+            if !to_ack.is_empty() || !to_nack.is_empty() {
+                let mut consumer = self.consumer.lock().await;
+                for id in &to_ack {
+                    let _ = consumer.ack(id).await;
+                }
+                for id in &to_nack {
+                    let _ = consumer.nack(id).await;
                 }
             }
         }
@@ -189,20 +198,12 @@ impl ConsumerRouter {
     /// Returns the first idle worker, or `None` if none are available.
     async fn select_local_idle_worker(&self, topic: &str) -> Option<Arc<Worker>> {
         let idle_workers = self.idle_workers.lock().await;
-        let workers = idle_workers.get(topic);
-        if let Some(workers) = workers {
-            if workers.is_empty() {
-                return None;
-            }
-            if let Some(name) = workers.first().clone() {
-                if let Some((w, _)) = self.worker_index.read().await.get(name) {
-                    return Some(w.clone());
-                };
-                return None;
-            };
-            return None;
-        }
-        None
+        let name = idle_workers.get(topic)?.first()?.clone();
+        self.worker_index
+            .read()
+            .await
+            .get(&name)
+            .map(|(w, _)| w.clone())
     }
 
     /// Returns the handler registered for the given topic.

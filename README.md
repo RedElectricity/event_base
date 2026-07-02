@@ -84,16 +84,62 @@ event_base = { version = "0.1", features = ["full"] }
 
 ## Performance
 
-Benchmarks measured on a 1M message workload (see `event_base_test/benches/`):
+Benchmarks measured with `criterion` (see `event_base_test/benches/`).
+
+### Queue benchmarks
+
+| Benchmark | Throughput |
+|---|---|
+| `queue_send/flume` (50K) | **13.15 Melem/s** |
+| `queue_send/mpmc` (50K) | **13.82 Melem/s** |
+| `queue_send/crossfire` (50K) | **13.85 Melem/s** |
+| `queue_recv/flume` (50K) | **17.63 Melem/s** |
+| `queue_recv/mpmc` (50K) | **17.98 Melem/s** |
+| `queue_recv/crossfire` (50K) | **18.27 Melem/s** |
+| `queue_claim_ack/flume` (10K) | **929.82 Kelem/s** |
+| `queue_claim_ack/mpmc` (10K) | **931.83 Kelem/s** |
+| `queue_claim_ack/crossfire` (10K) | **933.77 Kelem/s** |
+
+### System send benchmarks
 
 | Benchmark | Throughput | Notes |
 |---|---|---|
-| `TopicRouter::send` | **2.08 Melem/s** | Full pipeline: WAL append + producer send |
-| `queue_send_mpmc` | **1.01 Melem/s** | MPMC queue send-only |
-| `queue_send_flume` | **0.98 Melem/s** | Flume queue send-only |
-| `handler-only (10k)` | **102.83 Kelem/s** | Pipeline: handler + WAL sync + audit |
-| `handler+cpu (10k)` | **76.16 Kelem/s** | CPU-bound handler processing |
-| `handler+1mw (10k)` | **39.42 Kelem/s** | Handler with one middleware |
+| `TopicRouter::send` (50K) | **13.92 Melem/s** | WAL append + producer send |
+| `system_send_queue/flume` (50K) | **2.93 Melem/s** | WAL append + queue producer.send |
+| `system_send_queue/mpmc` (50K) | **3.15 Melem/s** | WAL append + queue producer.send |
+| `system_send_queue/crossfire` (50K) | **3.15 Melem/s** | WAL append + queue producer.send |
+
+### System process benchmarks (10K messages)
+
+| Benchmark | Throughput | Notes |
+|---|---|---|
+| `handler-only` | **229.74 Kelem/s** | Pipeline: handler + WAL sync + audit |
+| `handler+cpu` | **230.32 Kelem/s** | CPU-bound handler processing |
+| `handler+1mw` | **226.28 Kelem/s** | Handler with one middleware |
+
+### Parallel processing (10K messages)
+
+| Benchmark | Throughput |
+|---|---|
+| `handler-only-4w` | **78.43 Melem/s** |
+| `handler+cpu-4w` | **78.04 Melem/s** |
+| `handler+1mw-4w` | **55.94 Melem/s** |
+| `handler-only-8w` | **123.35 Melem/s** |
+| `handler+cpu-8w` | **123.29 Melem/s** |
+| `handler+1mw-8w` | **92.27 Melem/s** |
+
+### Full pipeline (10K messages)
+
+| Benchmark | Throughput |
+|---|---|
+| `system_full_pipeline_backends_4w/flume` | **20.74 Melem/s** |
+| `system_full_pipeline_backends_4w/mpmc` | **20.97 Melem/s** |
+| `system_full_pipeline_backends_4w/crossfire` | **21.16 Melem/s** |
+| `system_full_pipeline_backends_8w/flume` | **27.56 Melem/s** |
+| `system_full_pipeline_backends_8w/mpmc` | **25.91 Melem/s** |
+| `system_full_pipeline_backends_8w/crossfire` | **28.77 Melem/s** |
+| `system_full_pipeline_cr/4w` | **160.39 Kelem/s** |
+| `system_full_pipeline_cr/8w` | **156.35 Kelem/s** |
 
 ---
 

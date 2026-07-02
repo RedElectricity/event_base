@@ -89,6 +89,29 @@ impl EConsumer for CrossfireConsumer {
         }))
     }
 
+    async fn claim_batch(&mut self, max: usize) -> Result<Vec<ClaimedMessage>, CoreError> {
+        if max == 0 {
+            return Ok(Vec::new());
+        }
+        let mut batch = Vec::with_capacity(max);
+        let mut pending = self.pending.lock().await;
+        for _ in 0..max {
+            match self.rx.try_recv() {
+                Ok(msg) => {
+                    let claim_id = Uuid::new_v4().to_string();
+                    pending.insert(claim_id.clone(), msg.clone());
+                    batch.push(ClaimedMessage {
+                        message: msg,
+                        claim_id,
+                        claimed_at: SystemTime::now(),
+                    });
+                }
+                Err(_) => break,
+            }
+        }
+        Ok(batch)
+    }
+
     async fn ack(&mut self, claim_id: &str) -> Result<(), CoreError> {
         let mut pending = self.pending.lock().await;
         pending.remove(claim_id);

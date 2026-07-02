@@ -65,6 +65,25 @@ pub trait EConsumer: Send + Sync {
     /// Returns `CoreError` if the underlying queue operation fails.
     async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError>;
 
+    /// Claims up to `max` messages in a single batch, reducing lock contention
+    /// on the internal pending map. The default implementation calls [`claim`](Self::claim)
+    /// in a loop; queue backends SHOULD override with an optimized version that
+    /// acquires the pending lock once for the entire batch.
+    ///
+    /// Returns however many messages were available (0 ..= `max`), never an error
+    /// for an empty queue.
+    async fn claim_batch(&mut self, max: usize) -> Result<Vec<ClaimedMessage>, CoreError> {
+        let mut batch = Vec::with_capacity(max);
+        for _ in 0..max {
+            match self.claim().await {
+                Ok(Some(msg)) => batch.push(msg),
+                Ok(None) => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(batch)
+    }
+
     /// Acknowledges the successful processing of a claimed message.
     ///
     /// This removes the message from the queue or marks it as processed.
