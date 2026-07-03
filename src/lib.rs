@@ -17,6 +17,7 @@ pub use event_base_middleware as middleware;
 #[cfg(feature = "memory")]
 pub use event_base_queue::flume;
 pub use event_base_queue::mpmc;
+pub use event_base_queue::crossfire;
 
 #[cfg(feature = "memory")]
 pub use event_base_wal::memory as memory_wal;
