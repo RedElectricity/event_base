@@ -3,7 +3,7 @@
 //! This module defines the core `EHandler` trait and the `Ack` enumeration
 //! used to signal how a message should be handled after processing.
 
-use crate::dead_letter::DeadReason;
+pub use crate::dead_letter::DeadReason;
 use crate::message::EMessage;
 use async_trait::async_trait;
 use std::time::Duration;

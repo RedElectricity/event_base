@@ -48,6 +48,18 @@ pub enum DeliveryMode {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct MessageTopic(pub String);
 
+impl From<&str> for MessageTopic {
+    fn from(s: &str) -> Self {
+        MessageTopic(s.to_string())
+    }
+}
+
+impl From<String> for MessageTopic {
+    fn from(s: String) -> Self {
+        MessageTopic(s)
+    }
+}
+
 /// Opaque payload as a byte vector.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode, Default)]
 pub struct MessagePayload(pub Vec<u8>);
