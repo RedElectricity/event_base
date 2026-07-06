@@ -413,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "event_base"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "event_base_audit",
  "event_base_core",
@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_attr"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "darling",
  "quote",
