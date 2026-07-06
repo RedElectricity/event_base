@@ -124,65 +124,62 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
         }
     };
 
+    let timeout_expr = match timeout {
+        Some(t) => quote! { Some(std::time::Duration::from_secs(#t)) },
+        None => quote! { None },
+    };
+    let shutdown_timeout_expr = match shutdown_timeout {
+        Some(t) => quote! { Some(std::time::Duration::from_secs(#t)) },
+        None => quote! { None },
+    };
+    let shutdown_check_expr = match shutdown_check_interval {
+        Some(t) => quote! { Some(std::time::Duration::from_millis(#t)) },
+        None => quote! { None },
+    };
+
     let expanded = quote! {
-        // The original function remains unchanged.
         #input_fn
 
-        // The handler struct that wraps the function.
+        #[allow(non_camel_case_types)]
         struct #handler_struct_ident;
 
         #[async_trait::async_trait]
-        impl event_base_core::handler::EHandler for #handler_struct_ident {
-            async fn handler(&self, msg: &event_base_core::message::EMessage) -> event_base_core::handler::Ack {
+        impl ::event_base::core::handler::EHandler for #handler_struct_ident {
+            async fn handler(&self, msg: &::event_base::core::message::EMessage) -> ::event_base::core::handler::Ack {
                 #fn_name(msg).await
             }
         }
 
-        // Bring linkme macro into scope (Rust 2024 edition compat).
-        use ::linkme::distributed_slice;
-
-        // Static entry in the distributed registry.
-        #[distributed_slice(::event_base_core::registry::HANDLER_REGISTRY)]
-        static #entry_ident: ::event_base_core::registry::HandlerEntry = ::event_base_core::registry::HandlerEntry {
+        #[linkme::distributed_slice(::event_base::core::registry::HANDLER_REGISTRY)]
+        static #entry_ident: ::event_base::core::registry::HandlerEntry = ::event_base::core::registry::HandlerEntry {
             topic: #topic,
             register_fn: &#register_ident,
         };
 
-        // The registration function that sets up everything.
-        async fn #register_ident(
-            shutdown_tx: ::event_base_core::shutdown::ShutdownSender,
-        ) -> Result<(), ::event_base_core::error::CoreError> {
-            use ::event_base_core::topic::TopicRouter;
-            use ::event_base_core::queues::consumer_router::ConsumerRouter;
-            use ::event_base_core::middleware::Pipeline;
-            use std::sync::Arc;
+        fn #register_ident(
+            _shutdown_tx: ::event_base::core::shutdown::ShutdownSender,
+        ) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = ::std::result::Result<(), ::event_base::core::error::CoreError>> + Send>> {
+            Box::pin(async move {
+                use ::event_base::core::topic::TopicRouter;
+                use ::event_base::core::queues::consumer_router::ConsumerRouter;
+                use ::event_base::core::middleware::Pipeline;
+                use std::sync::Arc;
 
-            let handler = Arc::new(#handler_struct_ident);
-            let router = TopicRouter::global();
-            let cr = ConsumerRouter::global();
-
-            cr.register(&*#topic, handler).await?;
-            router.register_topic(&*#topic).await?;
-
-            // Build the pipeline (wrapped in Arc so it can be cloned for each worker).
-            let pipeline = Arc::new(
-                #pipeline_code
-            );
-
-            // Create the specified number of workers.
-            for _i in 0..#workers {
-                let worker = cr.create_worker(
-                    #topic,
-                    pipeline.clone(),
-                    #timeout.map(std::time::Duration::from_secs),
-                    #shutdown_timeout.map(std::time::Duration::from_secs),
-                    #shutdown_check_interval.map(std::time::Duration::from_millis),
-                ).await?;
-            }
-
-            Ok(())
+                let handler = Arc::new(#handler_struct_ident);
+                let router = TopicRouter::global();
+                let cr = ConsumerRouter::global();
+                cr.register(&*#topic, handler).await?;
+                router.register_topic(&*#topic).await;
+                let pipeline = Arc::new(#pipeline_code);
+                for _i in 0..#workers {
+                    let _worker = cr.create_worker(
+                        #topic, pipeline.clone(),
+                        #timeout_expr, #shutdown_timeout_expr, #shutdown_check_expr,
+                    ).await?;
+                }
+                Ok(())
+            })
         }
     };
-
     Ok(expanded.into())
 }
