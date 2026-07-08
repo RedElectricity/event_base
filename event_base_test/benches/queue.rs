@@ -343,6 +343,7 @@ fn bench_topic_send(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 for m in &msgs {
+                    let router = TopicRouter::global().read().await;
                     router
                         .send(bench_topic(), m.clone(), None, None)
                         .await
@@ -440,6 +441,7 @@ fn bench_worker_process(c: &mut Criterion, label: &str, pipeline: Arc<Pipeline>)
     group.finish();
 
     rt.block_on(async {
+        let cr = ConsumerRouter::global().read().await;
         cr.del_workers(t).await.ok();
     });
 }
