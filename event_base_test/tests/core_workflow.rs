@@ -119,21 +119,17 @@ async fn core_workflow_covers_global_paths() {
         ))
         .await
         .expect("worker register should succeed");
-    drop(registry);
 
-    {
-        let topic_router = TopicRouter::global().write().await;
-        topic_router.register_topic("orders").await;
-        topic_router.register_topic("orders").await;
-        let topics = topic_router.list_topics().await;
-        assert_eq!(topics, vec!["orders".to_string()]);
-    }
+    TopicRouter::global().write().await.register_topic("orders").await;
+    TopicRouter::global().write().await.register_topic("orders").await;
+    let topics = TopicRouter::global().read().await.list_topics().await;
+    assert_eq!(topics, vec!["orders".to_string()]);
 
     eprintln!("stage: routing");
 
     let standard_msg = message("ignored", b"standard", DeliveryMode::Standard);
     let standard_id = standard_msg.id.clone();
-    topic_router
+    TopicRouter::global().read().await
         .send("orders", standard_msg, None, None)
         .await
         .expect("standard send should succeed");
@@ -151,7 +147,7 @@ async fn core_workflow_covers_global_paths() {
 
     let try_msg = message("ignored", b"try", DeliveryMode::Standard);
     let try_id = try_msg.id.clone();
-    topic_router
+    TopicRouter::global().read().await
         .send("orders", try_msg, Some(true), None)
         .await
         .expect("try send should succeed");
@@ -166,7 +162,7 @@ async fn core_workflow_covers_global_paths() {
 
     let timeout_msg = message("ignored", b"timeout", DeliveryMode::Standard);
     let timeout_id = timeout_msg.id.clone();
-    topic_router
+    TopicRouter::global().read().await
         .send("orders", timeout_msg, None, Some(Duration::from_millis(2)))
         .await
         .expect("timeout send should succeed");
@@ -188,7 +184,7 @@ async fn core_workflow_covers_global_paths() {
         .await
         .expect("topic workers should exist")
         .len();
-    topic_router
+    TopicRouter::global().read().await
         .send("orders", broadcast_msg, Some(true), None)
         .await
         .expect("broadcast send should succeed");
@@ -228,7 +224,7 @@ async fn core_workflow_covers_global_paths() {
     let past_msg_id = past_msg.id.clone();
     past_msg.deliver_at = Some(SystemTime::now() - Duration::from_secs(1));
     // TopicRouter schedules past-deliver_at messages in the WAL (no ErrorTime check)
-    topic_router
+    TopicRouter::global().read().await
         .send("orders", past_msg, None, None)
         .await
         .expect("past deliver_at should schedule in WAL, not fail");
@@ -261,7 +257,7 @@ async fn core_workflow_covers_global_paths() {
         .seed_pending(WalRecord::from_msg(ignored.clone()))
         .await;
 
-    let replay_summary = topic_router
+    let replay_summary = TopicRouter::global().read().await
         .replay(Some(&["orders"]))
         .await
         .expect("replay should succeed");
@@ -296,7 +292,7 @@ async fn core_workflow_covers_global_paths() {
         audit_handler.handler(&audit_message).await,
         event_base_core::handler::Ack::Ack
     ));
-    let recent_audits = AuditManager::global().get_recent(1).await;
+    let recent_audits = AuditManager::global().read().await.get_recent(1).await;
     assert_eq!(recent_audits.len(), 1);
     assert_eq!(recent_audits[0].message_id, "audit-1");
 

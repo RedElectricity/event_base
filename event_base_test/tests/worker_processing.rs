@@ -206,10 +206,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             .status
             == WalRecordState::Complete
     }));
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 2: Dead → dead_letter topic + WAL Failed ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Dead {
             dead_reason: DeadReason::Explicit,
@@ -233,10 +233,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             })
     );
     drop(ms);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 3: NoAck no retry_after → worker producer ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::NoAck {
             retry_after: None,
@@ -249,10 +249,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     w.test_process_msg(m).await.expect("3");
     assert_eq!(wp.sent.lock().await.len(), bw + 1);
     assert_eq!(wp.sent.lock().await[bw].attempts, 1);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 4: NoAck with retry_after → scheduled in WAL (not sent immediately) ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::NoAck {
             retry_after: Some(Duration::from_secs(10)),
@@ -273,10 +273,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         scheduled.iter().any(|r| r.message.id == mid),
         "message should be scheduled in WAL"
     );
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 5: NoAck max_retries exceeded → dead letter ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::NoAck {
             retry_after: None,
@@ -295,10 +295,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             .any(|x| x.topic.0.starts_with("dead_letter."))
     );
     drop(ms);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 6: Repeated(3) fully consumed → complete ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -314,10 +314,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             s.status == WalRecordState::Complete && s.message_id == mid
         })
     }));
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 7: Repeated(5) requeue ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -335,10 +335,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             s.status == WalRecordState::Pending && s.message_id == mid
         })
     }));
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 8: Timeout → Dead(Timeout) ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     struct Slow;
     #[async_trait]
     impl EHandler for Slow {
@@ -355,7 +355,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     let ms = gp.sent.lock().await;
     assert!(ms.iter().any(|x| x.topic.0.starts_with("dead_letter.")));
     drop(ms);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 9: WalClient all methods ──
     let client = WalClient::new("w".to_string());
@@ -396,7 +396,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     drop(ms);
 
     // ── 10: Broadcast Ack ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -408,7 +408,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
             .map_or(false, |(s, _)| s.status == WalRecordState::Complete)
     }));
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 11: generate_audit_msg fields ──
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
@@ -432,7 +432,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     assert_eq!(r.duration, Some(d));
 
     // ── 12: send_to_dead_letter full path ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -447,10 +447,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     assert!(n.iter().any(|x| x.topic.0 == format!("dead_letter.{}", t)));
     assert!(n.iter().any(|x| x.topic.0 == SYSTEM_TOPIC_AUDIT));
     drop(ms);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 13: shutdown → ShutdownAck ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -471,12 +471,12 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         assert_eq!(a.worker_name, wname);
     }
     drop(ms);
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 14: AuditManager get_recent ──
-    let audit = AuditManager::global();
     for i in 0..5 {
-        audit
+        AuditManager::global()
+            .write().await
             .record(AuditRecord {
                 message_id: format!("a-{}", i),
                 topic: "ac".into(),
@@ -490,12 +490,12 @@ async fn worker_process_msg_and_wal_sync_coverage() {
             .await
             .expect("rec");
     }
-    let recent = audit.get_recent(3).await;
+    let recent = AuditManager::global().read().await.get_recent(3).await;
     assert_eq!(recent.len(), 3);
     assert_eq!(recent[0].message_id, "a-4");
 
     // ── 15: requeue_message ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -517,10 +517,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                 })
             })
     );
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 16: Repeated(1) complete ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -540,10 +540,10 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                 })
             })
     );
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 
     // ── 17: is_shutdown_complete + get_status ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));
@@ -553,5 +553,5 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         w.get_status().await,
         event_base_core::worker::WorkerStatus::Idle
     ));
-    cr.del_workers(t).await.ok();
+    ConsumerRouter::global().write().await.del_workers(t).await.ok();
 }

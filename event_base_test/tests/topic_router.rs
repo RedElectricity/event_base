@@ -69,7 +69,7 @@ async fn topic_router_full_lifecycle() {
 
     // ---- standard send ----
     let msg = message("orders", b"hello", DeliveryMode::Standard);
-    router
+    TopicRouter::global().read().await
         .send("orders", msg, None, None)
         .await
         .expect("send should succeed");
@@ -78,7 +78,7 @@ async fn topic_router_full_lifecycle() {
 
     // ---- try_send ----
     let msg = message("orders", b"try-me", DeliveryMode::Standard);
-    router
+    TopicRouter::global().read().await
         .send("orders", msg, Some(true), None)
         .await
         .expect("try_send should succeed");
@@ -86,7 +86,7 @@ async fn topic_router_full_lifecycle() {
 
     // ---- send with timeout ----
     let msg = message("orders", b"timeout-me", DeliveryMode::Standard);
-    router
+    TopicRouter::global().read().await
         .send("orders", msg, None, Some(Duration::from_millis(100)))
         .await
         .expect("send_timeout should succeed");
@@ -95,7 +95,7 @@ async fn topic_router_full_lifecycle() {
     // ---- delayed message ----
     let mut delayed = message("orders", b"delayed", DeliveryMode::Standard);
     delayed.deliver_at = Some(SystemTime::now() + Duration::from_secs(60));
-    router
+    TopicRouter::global().read().await
         .send("orders", delayed, None, None)
         .await
         .expect("delayed send should succeed");
@@ -106,7 +106,7 @@ async fn topic_router_full_lifecycle() {
     // ---- past delivery time is tolerated (scheduled in WAL, not rejected) ----
     let mut past = message("orders", b"past", DeliveryMode::Standard);
     past.deliver_at = Some(SystemTime::now() - Duration::from_secs(10));
-    router
+    TopicRouter::global().read().await
         .send("orders", past, None, None)
         .await
         .expect("past deliver_at should schedule in WAL, not fail");
@@ -130,7 +130,7 @@ async fn topic_router_full_lifecycle() {
         .seed_pending(WalRecord::from_msg(ignored_msg.clone()))
         .await;
 
-    let summary = router
+    let summary = TopicRouter::global().read().await
         .replay(Some(&["orders"]))
         .await
         .expect("replay should succeed");
@@ -159,7 +159,7 @@ async fn topic_router_full_lifecycle() {
         .seed_pending(WalRecord::from_msg(msg_b.clone()))
         .await;
 
-    let summary = router.replay(None).await.expect("replay should succeed");
+    let summary = TopicRouter::global().read().await.replay(None).await.expect("replay should succeed");
     // At least the 2 newly seeded messages are recovered
     assert!(summary.recovered >= 2);
     assert!(summary.errors.is_empty());
@@ -167,11 +167,11 @@ async fn topic_router_full_lifecycle() {
     // ---- replay with empty WAL (no pending messages left) ----
     // Note: replay(None) also recovers records appended during the previous replay's send() calls
     // So recovered may be > 0; just verify no errors
-    let empty_summary = router.replay(None).await.expect("replay should succeed");
+    let empty_summary = TopicRouter::global().read().await.replay(None).await.expect("replay should succeed");
     assert!(empty_summary.errors.is_empty());
 
     // ---- get_producer (basic sanity check) ----
-    let retrieved = router.get_producer();
+    let retrieved = TopicRouter::global().read().await.get_producer();
     let check_msg = message("test", b"direct", DeliveryMode::Standard);
     retrieved
         .send(check_msg)

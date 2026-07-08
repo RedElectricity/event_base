@@ -192,9 +192,8 @@ async fn metrics_and_audit_singletons_lifecycle() {
         .await;
     mgr.feed_audit(&audit_record("a5", "orders", AuditEventType::Retry))
         .await;
-    drop(mgr);
-
     let snap = mgr.snapshot().await;
+    drop(mgr);
     assert_eq!(snap.business.enqueued.get("orders"), Some(&2));
     assert_eq!(snap.business.completed.get("orders"), Some(&1));
     assert_eq!(snap.business.failed.get("orders"), Some(&1));
@@ -207,11 +206,10 @@ async fn metrics_and_audit_singletons_lifecycle() {
         Err(CoreError::AlreadyInitialized)
     ));
 
-    let audit = AuditManager::global();
-
     // Record entries
     for i in 0..8 {
-        audit
+        AuditManager::global()
+            .write().await
             .record(audit_record(
                 &format!("audit-{}", i),
                 "test",
@@ -222,13 +220,13 @@ async fn metrics_and_audit_singletons_lifecycle() {
     }
 
     // get_recent returns newest first
-    let recent = audit.get_recent(3).await;
+    let recent = AuditManager::global().read().await.get_recent(3).await;
     assert_eq!(recent.len(), 3);
     assert_eq!(recent[0].message_id, "audit-7");
     assert_eq!(recent[1].message_id, "audit-6");
     assert_eq!(recent[2].message_id, "audit-5");
 
     // get_recent with count larger than buffer
-    let all = audit.get_recent(100).await;
+    let all = AuditManager::global().read().await.get_recent(100).await;
     assert_eq!(all.len(), 8);
 }

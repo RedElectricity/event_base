@@ -64,6 +64,7 @@ async fn worker_registry_full_lifecycle() {
     assert!(names.contains(&"worker-b".to_string()));
 
     // ---- register new worker ----
+    let registry = WorkerRegistry::global().write().await;
     registry
         .register(worker_info("worker-c", "analytics"))
         .await
