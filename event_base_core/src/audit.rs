@@ -77,7 +77,7 @@ pub trait AuditWriter: Send + Sync {
     async fn write(&self, record: &AuditRecord) -> Result<(), CoreError>;
 }
 
-static AUDIT_MANAGER: OnceLock<Arc<AuditManager>> = OnceLock::new();
+static AUDIT_MANAGER: OnceLock<RwLock<AuditManager>> = OnceLock::new();
 
 /// Central audit manager that buffers records and forwards them to writers.
 pub struct AuditManager {
@@ -99,7 +99,7 @@ impl AuditManager {
         };
 
         AUDIT_MANAGER
-            .set(Arc::from(audit))
+            .set(RwLock::from(audit))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -113,11 +113,10 @@ impl AuditManager {
     ///
     /// # Panics
     /// Panics if the manager has not been initialized.
-    pub fn global() -> Arc<AuditManager> {
+    pub fn global() -> &'static RwLock<AuditManager> {
         AUDIT_MANAGER
             .get()
             .expect("AuditManager not initialized")
-            .clone()
     }
 
     /// Records an audit event.

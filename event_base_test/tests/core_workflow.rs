@@ -102,7 +102,7 @@ async fn core_workflow_covers_global_paths() {
 
     eprintln!("stage: router setup");
 
-    let registry = WorkerRegistry::global();
+    let registry = WorkerRegistry::global().write().await;
     registry
         .register(worker_info(
             "retire-me",
@@ -119,11 +119,15 @@ async fn core_workflow_covers_global_paths() {
         ))
         .await
         .expect("worker register should succeed");
+    drop(registry);
 
-    let topic_router = TopicRouter::global();
-    topic_router.register_topic("orders").await;
-    topic_router.register_topic("orders").await;
-    assert_eq!(topic_router.list_topics().await, vec!["orders".to_string()]);
+    {
+        let topic_router = TopicRouter::global().write().await;
+        topic_router.register_topic("orders").await;
+        topic_router.register_topic("orders").await;
+        let topics = topic_router.list_topics().await;
+        assert_eq!(topics, vec!["orders".to_string()]);
+    }
 
     eprintln!("stage: routing");
 
@@ -179,6 +183,7 @@ async fn core_workflow_covers_global_paths() {
     let broadcast_id = broadcast_msg.id.clone();
     let try_count_before = producer.try_sent.lock().await.len();
     let expected_broadcast_count = WorkerRegistry::global()
+        .read().await
         .get_workers("orders")
         .await
         .expect("topic workers should exist")
@@ -307,15 +312,17 @@ async fn core_workflow_covers_global_paths() {
         event_base_core::handler::Ack::Ack
     ));
     let stored_metrics = MetricsStore::global()
+        .read().await
         .get_node(&get_node_name())
         .await
         .expect("node metrics should be present");
     assert_eq!(stored_metrics.node_worker_count, 2);
 
     MetricsManager::global()
+        .write().await
         .feed_audit(&audit_record("audit-2", "orders", AuditEventType::Retry))
         .await;
-    let snapshot = MetricsManager::global().snapshot().await;
+    let snapshot = MetricsManager::global().read().await.snapshot().await;
     assert_eq!(snapshot.business.retried.get("orders").copied(), Some(1));
     assert!(
         snapshot
@@ -340,7 +347,7 @@ async fn core_workflow_covers_global_paths() {
         shutdown_handler.handler(&shutdown_message).await,
         event_base_core::handler::Ack::Ack
     ));
-    let remaining_workers = WorkerRegistry::global().get_all_workers().await;
+    let remaining_workers = WorkerRegistry::global().read().await.get_all_workers().await;
     assert!(!format!("{:?}", remaining_workers).contains("retire-me"));
 
     eprintln!("stage: shutdown handlers");

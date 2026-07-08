@@ -6,10 +6,10 @@
 use crate::error::CoreError;
 use crate::metrics::node::NodeMetrics;
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use tokio::sync::RwLock;
 
-static METRICS_STORE: OnceLock<Arc<MetricsStore>> = OnceLock::new();
+static METRICS_STORE: OnceLock<RwLock<MetricsStore>> = OnceLock::new();
 
 /// A thread‑safe store for node metrics.
 pub struct MetricsStore {
@@ -22,11 +22,11 @@ impl MetricsStore {
     /// # Errors
     /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init() -> Result<(), CoreError> {
-        let store: Arc<MetricsStore> = Arc::new(MetricsStore {
+        let store = MetricsStore {
             nodes: RwLock::new(HashMap::new()),
-        });
+        };
         METRICS_STORE
-            .set(store)
+            .set(RwLock::new(store))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -35,11 +35,10 @@ impl MetricsStore {
     ///
     /// # Panics
     /// Panics if the store has not been initialized.
-    pub fn global() -> Arc<MetricsStore> {
+    pub fn global() -> &'static RwLock<MetricsStore> {
         METRICS_STORE
             .get()
             .expect("MetricsStore not initialized")
-            .clone()
     }
 
     /// Updates the metrics for a specific node, overwriting any existing entry.

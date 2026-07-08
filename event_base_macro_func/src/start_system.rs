@@ -73,13 +73,11 @@ pub async fn start_system_impl(
 
     event_base_core::registry::register_all_handlers(shutdown_tx.clone()).await?;
 
-    let cr = ConsumerRouter::global();
     tokio::spawn(async move {
-        let _ = cr.recv().await;
+        let _ = ConsumerRouter::global().read().await.recv().await;
     });
 
-    let router = TopicRouter::global();
-
+    let router = TopicRouter::global().read().await;
     let producer = router.get_producer();
     let trace_layer = TraceLayer::new(producer);
     Registry::default().with(trace_layer).init();

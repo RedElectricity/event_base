@@ -24,7 +24,7 @@ pub mod worker;
 pub mod worker_registry;
 
 /// Global node name (set once at startup).
-static NODE_NAME: OnceLock<Arc<String>> = OnceLock::new();
+static NODE_NAME: OnceLock<RwLock<String>> = OnceLock::new();
 /// Global node type (can be changed during tests).
 static NODE_TYPE: RwLock<Option<Arc<NodeType>>> = RwLock::new(None);
 
@@ -47,7 +47,7 @@ pub enum NodeType {
 /// * `node_name` - A unique identifier for this node (e.g., hostname or UUID).
 pub fn set_node_name(node_name: String) {
     NODE_NAME
-        .set(Arc::new(node_name))
+        .set(RwLock::new(node_name))
         .expect("Node name already set");
 }
 
@@ -59,7 +59,9 @@ pub fn get_node_name() -> String {
     NODE_NAME
         .get()
         .expect("Node name not initialized")
-        .to_string()
+        .read()
+        .expect("NODE_NAME poisoned")
+        .clone()
 }
 
 /// Sets the global node type.

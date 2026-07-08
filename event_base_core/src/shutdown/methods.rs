@@ -39,7 +39,7 @@ pub async fn shutdown_all_workers_two_stage(
 
     let start = std::time::Instant::now();
     while start.elapsed() < timeout {
-        let workers = ConsumerRouter::global().get_all_workers().await;
+        let workers = ConsumerRouter::global().read().await.get_all_workers().await;
         if workers.is_empty() {
             return Ok(());
         }
@@ -47,19 +47,19 @@ pub async fn shutdown_all_workers_two_stage(
         if all_done {
             // 全部完成，统一清理
             for w in workers {
-                let _ = ConsumerRouter::global().del_worker(&w.name).await;
+                let _ = ConsumerRouter::global().write().await.del_worker(&w.name).await;
             }
             return Ok(());
         }
         tokio::time::sleep(poll_interval).await;
     }
 
-    let workers = ConsumerRouter::global().get_all_workers().await;
+    let workers = ConsumerRouter::global().read().await.get_all_workers().await;
     for worker in workers {
         worker
             .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
             .await?;
-        let _ = ConsumerRouter::global().del_worker(&worker.name).await;
+        let _ = ConsumerRouter::global().write().await.del_worker(&worker.name).await;
         tracing::warn!("Force removed worker: {}", worker.name);
     }
     Ok(())
@@ -77,14 +77,14 @@ pub async fn shutdown_all_workers_two_stage(
 /// # Errors
 /// Returns `CoreError` if the worker does not exist or if the shutdown call fails.
 pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Result<(), CoreError> {
-    let worker = ConsumerRouter::global().get_worker(worker_id).await?;
+    let worker = ConsumerRouter::global().read().await.get_worker(worker_id).await?;
 
     loop {
         if worker.get_status().await == Idle {
             worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await?;
-            ConsumerRouter::global().del_worker(&worker.name).await?;
+            ConsumerRouter::global().write().await.del_worker(&worker.name).await?;
             break;
         }
         tokio::time::sleep(poll_interval).await;
@@ -99,12 +99,12 @@ pub async fn graceful_shutdown(worker_id: &str, poll_interval: Duration) -> Resu
 /// `shutdown` with zero timeouts and deletes each worker from the router.
 /// Warnings are logged for each force‑removed worker.
 pub async fn shutdown_force() {
-    let workers = ConsumerRouter::global().get_all_workers().await;
+    let workers = ConsumerRouter::global().read().await.get_all_workers().await;
     for worker in workers {
         let _ = worker
             .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
             .await;
-        let _ = ConsumerRouter::global().del_worker(&worker.name).await;
+        let _ = ConsumerRouter::global().write().await.del_worker(&worker.name).await;
     }
 }
 
@@ -124,13 +124,13 @@ pub async fn shutdown_timeout(timeout: Duration) {
 /// Workers that are processing messages are left untouched. This is a
 /// non‑blocking operation that only affects idle workers.
 pub async fn shutdown_idle_only() {
-    let workers = ConsumerRouter::global().get_all_workers().await;
+    let workers = ConsumerRouter::global().read().await.get_all_workers().await;
     for worker in workers {
         if worker.get_status().await == Idle {
             let _ = worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await;
-            let _ = ConsumerRouter::global().del_worker(&worker.name).await;
+            let _ = ConsumerRouter::global().write().await.del_worker(&worker.name).await;
         }
     }
 }
@@ -145,13 +145,13 @@ pub async fn shutdown_idle_only() {
 /// * `batch_size` - The number of workers to shut down per batch.
 /// * `interval` - The delay between batches.
 pub async fn shutdown_batched(batch_size: usize, interval: Duration) {
-    let workers = ConsumerRouter::global().get_all_workers().await;
+    let workers = ConsumerRouter::global().read().await.get_all_workers().await;
     for chunk in workers.chunks(batch_size) {
         for worker in chunk {
             let _ = worker
                 .shutdown(Duration::new(0, 0), Option::from(Duration::new(0, 0)))
                 .await;
-            let _ = ConsumerRouter::global().del_worker(&worker.name).await;
+            let _ = ConsumerRouter::global().write().await.del_worker(&worker.name).await;
         }
         tokio::time::sleep(interval).await;
     }

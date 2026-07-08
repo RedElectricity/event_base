@@ -87,12 +87,12 @@ impl SystemHandlerBuilder {
     /// Returns `CoreError` if any global manager initialization fails or
     /// if topic registration fails.
     pub async fn register_all(&self) -> Result<(), CoreError> {
-        let router = ConsumerRouter::global();
         AuditManager::init(self.audit_buf_capacity)?;
         MetricsManager::init()?;
         MetricsStore::init()?;
 
         if get_node_type() == Arc::from(NodeType::Worker) {
+            let router = ConsumerRouter::global().write().await;
             router
                 .register(
                     SYSTEM_TOPIC_SHUTDOWN,
@@ -118,7 +118,9 @@ impl SystemHandlerBuilder {
             return Ok(());
         };
 
-        if !AuditManager::global().writers.is_empty() {
+        let router = ConsumerRouter::global().write().await;
+
+        if !AuditManager::global().read().await.writers.is_empty() {
             router
                 .register(SYSTEM_TOPIC_AUDIT, Arc::new(AuditHandler {}))
                 .await?;

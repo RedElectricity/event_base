@@ -155,6 +155,7 @@ where
             );
             tokio::spawn(async move {
                 let _ = TopicRouter::global()
+                    .read().await
                     .send(SYSTEM_TOPIC_TRACE, msg, None, None)
                     .await;
             });

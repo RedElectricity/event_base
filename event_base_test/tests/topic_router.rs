@@ -55,17 +55,14 @@ async fn topic_router_full_lifecycle() {
     let result = TopicRouter::init(producer2);
     assert!(matches!(result, Err(CoreError::AlreadyInitialized)));
 
-    let router = TopicRouter::global();
+    let topics = TopicRouter::global().read().await.list_topics().await;
+    assert!(topics.is_empty());
 
-    // ---- register/list topics ----
-    let empty = router.list_topics().await;
-    assert!(empty.is_empty());
+    TopicRouter::global().write().await.register_topic("orders").await;
+    TopicRouter::global().write().await.register_topic("orders").await; // idempotent
+    TopicRouter::global().write().await.register_topic("payments").await;
 
-    router.register_topic("orders").await;
-    router.register_topic("orders").await; // idempotent
-    router.register_topic("payments").await;
-
-    let topics = router.list_topics().await;
+    let topics = TopicRouter::global().read().await.list_topics().await;
     assert_eq!(topics.len(), 2);
     assert!(topics.contains(&"orders".to_string()));
     assert!(topics.contains(&"payments".to_string()));

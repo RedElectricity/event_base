@@ -27,9 +27,7 @@ impl EHandler for AuditHandler {
             }
         };
 
-        let audit_mgr = AuditManager::global();
-
-        if let Err(e) = audit_mgr.record(record.clone()).await {
+        if let Err(e) = AuditManager::global().write().await.record(record.clone()).await {
             eprintln!(
                 "[AUDIT_ERROR] Audit writer failed for msg {}: {}",
                 record.message_id, e

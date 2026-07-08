@@ -222,6 +222,7 @@ impl Worker {
                     if let Some(delay) = retry_after {
                         msg.deliver_at = SystemTime::now().checked_add(delay);
                         TopicRouter::global()
+                            .read().await
                             .send(&msg.clone().topic.0, msg.clone(), None, None)
                             .await?;
                         Ok(())
@@ -281,7 +282,7 @@ impl Worker {
         let mut msg = self.audit_template.clone();
         msg.payload = MessagePayload(payload);
         msg.id = Uuid::new_v4().to_string();
-        TopicRouter::global().send_system(msg, None, None).await?;
+        TopicRouter::global().read().await.send_system(msg, None, None).await?;
         Ok(())
     }
 
@@ -304,6 +305,7 @@ impl Worker {
             .await?;
 
         TopicRouter::global()
+            .read().await
             .send(&dead_letter_topic_name, msg.clone(), None, None)
             .await?;
 
@@ -369,6 +371,7 @@ impl Worker {
         );
 
         TopicRouter::global()
+            .read().await
             .send(SYSTEM_TOPIC_SHUTDOWN_ACK, ack_msg, None, None)
             .await?;
         Ok(())
@@ -383,11 +386,13 @@ impl Worker {
         match status {
             Idle => {
                 let _ = ConsumerRouter::global()
+                    .write().await
                     .set_idle(self.topic.clone(), self.name.clone())
                     .await;
             }
             Working => {
                 let _ = ConsumerRouter::global()
+                    .write().await
                     .set_working(self.topic.clone(), self.name.clone())
                     .await;
             }

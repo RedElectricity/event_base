@@ -223,7 +223,7 @@ async fn worker_and_router_and_shutdown_integration() {
     let _ = WorkerRegistry::init(Some(wal_handle.clone())).await;
     let global_producer = Arc::new(RecordingProducer::default());
     let _ = TopicRouter::init(global_producer);
-    TopicRouter::global().register_topic("test-topic").await;
+    TopicRouter::global().write().await.register_topic("test-topic").await;
 
     let _ = event_base_core::audit::AuditManager::init(16);
     let _ = event_base_core::metrics::manager::MetricsManager::init();
@@ -244,7 +244,7 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     });
-    let cr = ConsumerRouter::global();
+    let cr = ConsumerRouter::global().write().await;
     cr.register("test-topic", handler.clone())
         .await
         .expect("register should succeed");
@@ -255,7 +255,7 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    let worker_name = cr
+    let worker_name = ConsumerRouter::global().write().await
         .create_worker(
             "test-topic",
             pipeline,
@@ -267,7 +267,9 @@ async fn worker_and_router_and_shutdown_integration() {
         .expect("create_worker should succeed");
     assert!(worker_name.starts_with("worker-test-topic-"));
 
+    drop(cr);
     // ──────── ConsumerRouter: get_worker, get_workers, get_all_workers ────────
+    let cr = ConsumerRouter::global().read().await;
     let w = cr.get_worker(&worker_name).await.expect("get_worker");
     assert_eq!(w.name, worker_name);
 
@@ -448,8 +450,9 @@ async fn worker_and_router_and_shutdown_integration() {
         .expect("del_workers should succeed");
     assert_eq!(cr.get_all_workers().await.len(), 0);
 
+    drop(cr);
     // Verify del_worker on non-existent returns error
-    let err = cr.del_worker("nonexistent").await.unwrap_err();
+    let err = ConsumerRouter::global().write().await.del_worker("nonexistent").await.unwrap_err();
     assert!(err.to_string().contains("Worker Not Found"));
 
     // ──────── TopicRouter: broadcast with error on Worker node ────────
@@ -457,6 +460,7 @@ async fn worker_and_router_and_shutdown_integration() {
     let _ = set_node_type(NodeType::Worker);
     let broadcast_msg = message("test-topic", b"broadcast", DeliveryMode::Broadcast);
     let result = TopicRouter::global()
+        .read().await
         .send("test-topic", broadcast_msg, None, None)
         .await;
     assert!(result.is_err());

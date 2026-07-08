@@ -20,7 +20,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::error;
 
-static CONSUMER_ROUTER: OnceLock<Arc<ConsumerRouter>> = OnceLock::new();
+static CONSUMER_ROUTER: OnceLock<RwLock<ConsumerRouter>> = OnceLock::new();
 
 const DEFAULT_BATCH_SIZE: usize = 64;
 
@@ -62,16 +62,16 @@ impl ConsumerRouter {
         factory: Arc<dyn QueueFactory>,
         batch_size: Option<usize>,
     ) -> Result<(), CoreError> {
-        let router = Arc::new(ConsumerRouter {
+        let router = ConsumerRouter {
             consumer,
             local_topics: RwLock::new(HashMap::new()),
             worker_index: RwLock::new(HashMap::new()),
             factory,
             idle_workers: Mutex::new(HashMap::new()),
             batch_size: batch_size.unwrap_or(DEFAULT_BATCH_SIZE),
-        });
+        };
         CONSUMER_ROUTER
-            .set(router)
+            .set(RwLock::new(router))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -80,11 +80,10 @@ impl ConsumerRouter {
     ///
     /// # Panics
     /// Panics if the router has not been initialized.
-    pub fn global() -> Arc<ConsumerRouter> {
+    pub fn global() -> &'static RwLock<ConsumerRouter> {
         CONSUMER_ROUTER
             .get()
             .expect("ConsumerRouter not initialized")
-            .clone()
     }
 
     /// The main dispatch loop.

@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 
-static TOPIC_ROUTER: OnceLock<Arc<TopicRouter>> = OnceLock::new();
+static TOPIC_ROUTER: OnceLock<RwLock<TopicRouter>> = OnceLock::new();
 
 /// Manages topic-based message routing and producer interaction.
 ///
@@ -44,12 +44,12 @@ impl TopicRouter {
     /// # Errors
     /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init(producer: Arc<dyn EProducer>) -> Result<(), CoreError> {
-        let router = Arc::new(TopicRouter {
+        let router = TopicRouter {
             inner: RwLock::new(Vec::new()),
             producer,
-        });
+        };
         TOPIC_ROUTER
-            .set(router)
+            .set(RwLock::new(router))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -58,11 +58,10 @@ impl TopicRouter {
     ///
     /// # Panics
     /// Panics if the router has not been initialized.
-    pub fn global() -> Arc<TopicRouter> {
+    pub fn global() -> &'static RwLock<TopicRouter> {
         TOPIC_ROUTER
             .get()
             .expect("TopicRouter not initialized")
-            .clone()
     }
 
     /// Replays pending messages from the WAL, optionally filtering by topics.
@@ -73,7 +72,7 @@ impl TopicRouter {
     /// # Errors
     /// Returns `CoreError` if WAL operations fail.
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
-        let wr = WorkerRegistry::global();
+        let wr = WorkerRegistry::global().read().await;
         let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
 
         let pending = {
@@ -139,7 +138,7 @@ impl TopicRouter {
         // Note: past `deliver_at` is tolerated — the WAL scheduler will deliver
         // them immediately on the next tick.
         if let Some(_deliver_at) = msg.deliver_at {
-            let wr = WorkerRegistry::global();
+            let wr = WorkerRegistry::global().read().await;
             let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
             let guard = wal.write().await;
             guard.schedule(WalRecord::from_msg(msg)).await?;
@@ -152,7 +151,7 @@ impl TopicRouter {
                     "Unsupported node type, send broadcast message must host".to_string(),
                 ));
             }
-            let workers = WorkerRegistry::global().get_workers(topic).await?;
+            let workers = WorkerRegistry::global().read().await.get_workers(topic).await?;
             for worker_index in workers {
                 let mut copy = msg.clone();
                 copy.id = format!("{}-{}", msg.id, worker_index.worker_name);
@@ -206,10 +205,10 @@ impl TopicRouter {
     ///
     /// WAL access is obtained via [`WorkerRegistry::global`].
     pub async fn run_delay_scheduler() {
-        let router = TopicRouter::global();
+        let router = TopicRouter::global().read().await;
         loop {
             let ready_records = {
-                let wr = WorkerRegistry::global();
+                let wr = WorkerRegistry::global().read().await;
                 let wal = match wr.wal() {
                     Some(w) => w,
                     None => {

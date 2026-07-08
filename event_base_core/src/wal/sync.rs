@@ -86,6 +86,7 @@ impl WalClient {
         msg.payload = MessagePayload(payload);
         msg.id = Uuid::new_v4().to_string();
         TopicRouter::global()
+            .read().await
             .send_system(msg, None, None)
             .await?;
         Ok(())

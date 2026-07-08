@@ -47,20 +47,21 @@ impl EHandler for TopicDiscovery {
             }
         };
 
-        let topic_router = TopicRouter::global();
-        let topic_list = topic_router.list_topics().await;
+        let topic_list = TopicRouter::global().read().await.list_topics().await;
 
         for item in topics.has_topics {
             if !topic_list.contains(&item) {
-                topic_router.register_topic(&item).await;
+                TopicRouter::global().write().await.register_topic(&item).await;
             }
         }
+
+        let updated_topics = TopicRouter::global().read().await.list_topics().await;
 
         let topics_sync_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_TOPIC_SYNC.to_string()),
             MessagePayload(
                 bincode::encode_to_vec(&TopicSyncMessage {
-                    topics: topic_router.list_topics().await,
+                    topics: updated_topics,
                 }, bincode::config::standard())
                 .unwrap_or_default(),
             ),
@@ -68,7 +69,8 @@ impl EHandler for TopicDiscovery {
             None,
         );
 
-        if let Err(_) = topic_router
+        if let Err(_) = TopicRouter::global()
+            .read().await
             .send(SYSTEM_TOPIC_TOPIC_SYNC, topics_sync_msg, None, None)
             .await
         {
@@ -100,12 +102,11 @@ impl EHandler for TopicSync {
             }
         };
 
-        let topic_router = TopicRouter::global();
-        let topic_list = topic_router.list_topics().await;
+        let topic_list = TopicRouter::global().read().await.list_topics().await;
 
         for item in topics.topics {
             if !topic_list.contains(&item) {
-                topic_router.register_topic(&item).await;
+                TopicRouter::global().write().await.register_topic(&item).await;
             }
         }
 

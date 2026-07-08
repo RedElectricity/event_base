@@ -166,10 +166,9 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
                 use std::sync::Arc;
 
                 let handler = Arc::new(#handler_struct_ident);
-                let router = TopicRouter::global();
-                let cr = ConsumerRouter::global();
+                let cr = ConsumerRouter::global().write().await;
                 cr.register(&*#topic, handler).await?;
-                router.register_topic(&*#topic).await;
+                TopicRouter::global().write().await.register_topic(&*#topic).await;
                 let pipeline = Arc::new(#pipeline_code);
                 for _i in 0..#workers {
                     let _worker = cr.create_worker(

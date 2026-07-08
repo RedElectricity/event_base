@@ -28,7 +28,7 @@ impl EHandler for MetricsHandler {
                 }
             };
 
-        MetricsStore::global().update(info.clone()).await;
+        MetricsStore::global().write().await.update(info.clone()).await;
 
         Ack::Ack
     }

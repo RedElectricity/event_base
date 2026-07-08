@@ -166,13 +166,12 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     });
     let mc = f.create_main_consumer().unwrap();
     let _ = ConsumerRouter::init(mc, f, None);
-    let cr = ConsumerRouter::global();
     let t = "cov";
     let h = Arc::new(StaticHandler { response: Ack::Ack });
     let wp = Arc::new(RecordingProducer::default());
 
     // ── 1: Ack Standard → 2 audits + WAL complete ──
-    cr.register(t, h.clone()).await.expect("r");
+    ConsumerRouter::global().write().await.register(t, h.clone()).await.expect("r");
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Ack,
     })));

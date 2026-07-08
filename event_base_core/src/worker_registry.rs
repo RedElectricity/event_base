@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 
-static WORKER_REGISTRY: OnceLock<Arc<WorkerRegistry>> = OnceLock::new();
+static WORKER_REGISTRY: OnceLock<RwLock<WorkerRegistry>> = OnceLock::new();
 
 /// Information about a registered worker.
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -59,12 +59,12 @@ impl WorkerRegistry {
             .await
             .load_worker_registry()
             .await?;
-        let registry = Arc::new(WorkerRegistry {
+        let registry = WorkerRegistry {
             wal,
             workers: RwLock::from(wr),
-        });
+        };
         WORKER_REGISTRY
-            .set(registry)
+            .set(RwLock::new(registry))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -73,11 +73,10 @@ impl WorkerRegistry {
     ///
     /// # Panics
     /// Panics if the registry is not initialized.
-    pub fn global() -> Arc<WorkerRegistry> {
+    pub fn global() -> &'static RwLock<WorkerRegistry> {
         WORKER_REGISTRY
             .get()
             .expect("WorkerRegistry is not initialized")
-            .clone()
     }
 
     /// Returns a reference to the global WAL, if one was provided during init.

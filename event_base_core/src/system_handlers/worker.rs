@@ -37,7 +37,7 @@ impl EHandler for WorkerDiscoveryHandler {
             last_heartbeat: SystemTime::now(),
         };
 
-        if let Err(_) = WorkerRegistry::global().register(worker).await {
+        if let Err(_) = WorkerRegistry::global().write().await.register(worker).await {
             eprintln!("[WORKER DISCOVERY]register worker failed")
         }
         Ack::Ack
@@ -66,6 +66,7 @@ impl EHandler for WorkerHeartbeatHandler {
             };
 
         if let Err(e) = WorkerRegistry::global()
+            .write().await
             .heartbeat(&heartbeat.worker_name)
             .await
         {

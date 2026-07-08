@@ -141,8 +141,7 @@ async fn metrics_and_audit_singletons_lifecycle() {
         Err(CoreError::AlreadyInitialized)
     ));
 
-    let store = MetricsStore::global();
-    assert!(store.get_all_nodes().await.is_empty());
+    assert!(MetricsStore::global().read().await.get_all_nodes().await.is_empty());
 
     let metrics = NodeMetrics {
         node_name: "node-a".to_string(),
@@ -152,13 +151,14 @@ async fn metrics_and_audit_singletons_lifecycle() {
         node_worker_count: 2,
         update_time: SystemTime::now(),
     };
-    store.update(metrics.clone()).await;
-    assert_eq!(store.get_all_nodes().await.len(), 1);
-    assert_eq!(store.get_node("node-a").await.unwrap().node_worker_count, 2);
-    assert!(store.get_node("unknown").await.is_none());
+    MetricsStore::global().write().await.update(metrics.clone()).await;
+    assert_eq!(MetricsStore::global().read().await.get_all_nodes().await.len(), 1);
+    assert_eq!(MetricsStore::global().read().await.get_node("node-a").await.unwrap().node_worker_count, 2);
+    assert!(MetricsStore::global().read().await.get_node("unknown").await.is_none());
 
     // Overwrite
-    store
+    MetricsStore::global()
+        .write().await
         .update(NodeMetrics {
             node_name: "node-a".to_string(),
             node_type: event_base_core::NodeType::Host,
@@ -168,7 +168,7 @@ async fn metrics_and_audit_singletons_lifecycle() {
             update_time: SystemTime::now(),
         })
         .await;
-    assert_eq!(store.get_node("node-a").await.unwrap().node_worker_count, 5);
+    assert_eq!(MetricsStore::global().read().await.get_node("node-a").await.unwrap().node_worker_count, 5);
 
     // ── MetricsManager ──
     MetricsManager::init().expect("MetricsManager init should succeed");
@@ -177,7 +177,7 @@ async fn metrics_and_audit_singletons_lifecycle() {
         Err(CoreError::AlreadyInitialized)
     ));
 
-    let mgr = MetricsManager::global();
+    let mgr = MetricsManager::global().write().await;
     mgr.feed_audit(&audit_record("a1", "orders", AuditEventType::Enqueued))
         .await;
     mgr.feed_audit(&audit_record("a2", "orders", AuditEventType::Enqueued))
@@ -192,6 +192,7 @@ async fn metrics_and_audit_singletons_lifecycle() {
         .await;
     mgr.feed_audit(&audit_record("a5", "orders", AuditEventType::Retry))
         .await;
+    drop(mgr);
 
     let snap = mgr.snapshot().await;
     assert_eq!(snap.business.enqueued.get("orders"), Some(&2));

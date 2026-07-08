@@ -138,7 +138,7 @@ impl EProducer for BenchProducer {
 
 // ── System setup (once per process) ──────────────────────────────────────────
 
-static BENCH_PRODUCER: std::sync::OnceLock<Arc<dyn EProducer>> = std::sync::OnceLock::new();
+static BENCH_PRODUCER: std::sync::OnceLock<std::sync::RwLock<Arc<dyn EProducer>>> = std::sync::OnceLock::new();
 
 fn system_init() {
     SYSTEM_INIT.call_once(|| {
@@ -165,7 +165,7 @@ fn system_init() {
             ConsumerRouter::init(main_consumer, qf, None).expect("CR init");
         });
 
-        BENCH_PRODUCER.set(producer).ok();
+        BENCH_PRODUCER.set(std::sync::RwLock::new(producer)).ok();
     });
 }
 
@@ -330,9 +330,8 @@ fn bench_queue_claim_ack(c: &mut Criterion) {
 fn bench_topic_send(c: &mut Criterion) {
     system_init();
     let rt = Runtime::new().unwrap();
-    let router = TopicRouter::global();
     rt.block_on(async {
-        router.register_topic(bench_topic()).await;
+        TopicRouter::global().write().await.register_topic(bench_topic()).await;
     });
 
     let mut group = c.benchmark_group("system_send");
@@ -404,11 +403,11 @@ fn bench_system_send_queue(c: &mut Criterion) {
 fn bench_worker_process(c: &mut Criterion, label: &str, pipeline: Arc<Pipeline>) {
     system_init();
     let rt = Runtime::new().unwrap();
-    let cr = ConsumerRouter::global();
     let t = bench_topic();
 
     rt.block_on(async {
-        cr.register(t, Arc::new(AckHandler))
+        ConsumerRouter::global().write().await
+            .register(t, Arc::new(AckHandler))
             .await
             .expect("register");
     });
@@ -528,9 +527,8 @@ fn bench_full_pipeline_cr(c: &mut Criterion, worker_count: usize) {
     let count = Arc::new(AtomicU64::new(0));
 
     let topic = format!("bench-cr-{}w", worker_count);
-    let cr = ConsumerRouter::global();
-
     rt.block_on(async {
+        let cr = ConsumerRouter::global().write().await;
         // Register + create workers only if not already done (OnceLock pattern)
         cr.register(&topic, Arc::new(CountingHandler(count.clone()))).await
             .or_else(|e| {
@@ -549,24 +547,24 @@ fn bench_full_pipeline_cr(c: &mut Criterion, worker_count: usize) {
                     .expect("create worker");
             }
         }
+        drop(cr);
     });
 
     // Spawn CR's recv loop in background
     // Spawn CR's recv loop only once
     static CR_RECV_SPAWNED: std::sync::Once = std::sync::Once::new();
     CR_RECV_SPAWNED.call_once(|| {
-        let cr_recv = ConsumerRouter::global();
         std::thread::spawn(move || {
             let rt = Runtime::new().unwrap();
             rt.block_on(async {
-                let _ = cr_recv.recv().await;
+                let _ = ConsumerRouter::global().read().await.recv().await;
             });
         });
     });
 
     // Pre‑create messages
     let all_msgs = pre_create(total as u64);
-    let producer = BENCH_PRODUCER.get().expect("BENCH_PRODUCER not set");
+    let producer = BENCH_PRODUCER.get().expect("BENCH_PRODUCER not set").read().expect("BENCH_PRODUCER poisoned").clone();
 
     let mut group = c.benchmark_group("system_full_pipeline_cr");
     group.throughput(Throughput::Elements(total as u64));

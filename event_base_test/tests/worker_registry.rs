@@ -52,10 +52,9 @@ async fn worker_registry_full_lifecycle() {
     let result = WorkerRegistry::init(Some(wal_handle)).await;
     assert!(matches!(result, Err(CoreError::AlreadyInitialized)));
 
-    let registry = WorkerRegistry::global();
-
     // ---- get_all_workers after init ----
-    let all = registry
+    let all = WorkerRegistry::global()
+        .read().await
         .get_all_workers()
         .await
         .expect("get_all should succeed");

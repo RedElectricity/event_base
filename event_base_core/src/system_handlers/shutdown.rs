@@ -93,6 +93,7 @@ impl EHandler for ShutdownAckHandler {
 
         if let Ok((ack, _)) = ack {
             WorkerRegistry::global()
+                .write().await
                 .unregister(&ack.worker_name)
                 .await
                 .unwrap_or_else(|_| {

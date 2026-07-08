@@ -10,9 +10,9 @@ use crate::metrics::node::NodeMetrics;
 use crate::metrics::node_store::MetricsStore;
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
-static METRICS_MANAGER: OnceLock<Arc<MetricsManager>> = OnceLock::new();
+static METRICS_MANAGER: OnceLock<RwLock<MetricsManager>> = OnceLock::new();
 
 /// The central manager for all metrics collection and snapshots.
 pub struct MetricsManager {
@@ -25,7 +25,7 @@ impl MetricsManager {
     /// # Errors
     /// Returns `CoreError::AlreadyInitialized` if called more than once.
     pub fn init() -> Result<(), CoreError> {
-        let manager = Arc::new(MetricsManager {
+        let manager = MetricsManager {
             aggregator: Arc::new(Mutex::new(MetricsAggregator {
                 enqueued: Default::default(),
                 completed: Default::default(),
@@ -33,9 +33,9 @@ impl MetricsManager {
                 retried: Default::default(),
                 latency_sum: Default::default(),
             })),
-        });
+        };
         METRICS_MANAGER
-            .set(manager)
+            .set(RwLock::new(manager))
             .map_err(|_| CoreError::AlreadyInitialized)?;
         Ok(())
     }
@@ -44,11 +44,10 @@ impl MetricsManager {
     ///
     /// # Panics
     /// Panics if the manager has not been initialized.
-    pub fn global() -> Arc<MetricsManager> {
+    pub fn global() -> &'static RwLock<MetricsManager> {
         METRICS_MANAGER
             .get()
             .expect("MetricsManager not initialized")
-            .clone()
     }
 
     /// Feeds an audit record into the aggregator.
@@ -64,7 +63,7 @@ impl MetricsManager {
     /// node metrics from the [`MetricsStore`].
     pub async fn snapshot(&self) -> MetricsSnapshot {
         let business = self.aggregator.lock().await.snapshot();
-        let nodes = MetricsStore::global().get_all_nodes().await;
+        let nodes = MetricsStore::global().read().await.get_all_nodes().await;
         MetricsSnapshot {
             business: business.clone(),
             nodes,
