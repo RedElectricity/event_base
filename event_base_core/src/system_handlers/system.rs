@@ -28,6 +28,20 @@ use crate::system_handlers::worker::{WorkerDiscoveryHandler, WorkerHeartbeatHand
 use crate::wal::wal::Wal;
 use crate::{NodeType, get_node_type};
 use std::sync::Arc;
+use std::time::Duration;
+
+const SYSTEM_WORKER_COUNT: usize = 4;
+
+/// 为已注册的系统 Topic 创建固定数量 Worker
+async fn spawn_system_workers(router: &ConsumerRouter, topic: &str, count: usize) -> Result<(), CoreError> {
+    let handler = router.get_handler(topic).await
+        .ok_or_else(|| CoreError::Other(format!("handler for {topic} not found")))?;
+    let pipeline = Arc::new(crate::middleware::Pipeline::from_arc(handler));
+    for _ in 0..count {
+        router.create_worker(topic, pipeline.clone(), None, None, None).await?;
+    }
+    Ok(())
+}
 use tokio::sync::RwLock;
 
 /// A builder that registers all system handlers based on node type and
@@ -124,6 +138,7 @@ impl SystemHandlerBuilder {
             router
                 .register(SYSTEM_TOPIC_AUDIT, Arc::new(AuditHandler {}))
                 .await?;
+            spawn_system_workers(&router, SYSTEM_TOPIC_AUDIT, SYSTEM_WORKER_COUNT).await?;
         }
 
         if !self.trace_collectors.is_empty() {
@@ -131,6 +146,7 @@ impl SystemHandlerBuilder {
             router
                 .register(SYSTEM_TOPIC_TRACE, Arc::new(handler))
                 .await?;
+            spawn_system_workers(&router, SYSTEM_TOPIC_TRACE, SYSTEM_WORKER_COUNT).await?;
         }
 
         router
@@ -139,6 +155,7 @@ impl SystemHandlerBuilder {
                 Arc::new(WorkerDiscoveryHandler {}),
             )
             .await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_WORKER_DISCOVERY, SYSTEM_WORKER_COUNT).await?;
 
         router
             .register(
@@ -146,6 +163,7 @@ impl SystemHandlerBuilder {
                 Arc::new(WorkerHeartbeatHandler {}),
             )
             .await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_WORKER_HEARTBEAT, SYSTEM_WORKER_COUNT).await?;
 
         router
             .register(
@@ -153,6 +171,7 @@ impl SystemHandlerBuilder {
                 Arc::new(WalSyncHandler::new(self.wal.clone())),
             )
             .await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_WAL_SYNC, SYSTEM_WORKER_COUNT).await?;
 
         router
             .register(
@@ -179,6 +198,12 @@ impl SystemHandlerBuilder {
             let collector = NodeCollector;
             let _ = collector.start().await;
         });
+
+        // 为无需 handler 的系统 Topic 创建 Worker（它们已在上面注册）
+        spawn_system_workers(&router, SYSTEM_TOPIC_SHUTDOWN, SYSTEM_WORKER_COUNT).await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_SHUTDOWN_ACK, SYSTEM_WORKER_COUNT).await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_TOPIC_DISCOVERY, SYSTEM_WORKER_COUNT).await?;
+        spawn_system_workers(&router, SYSTEM_TOPIC_TOPIC_SYNC, SYSTEM_WORKER_COUNT).await?;
 
         Ok(())
     }

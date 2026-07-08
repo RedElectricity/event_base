@@ -56,6 +56,14 @@ impl Pipeline {
         }
     }
 
+    /// Creates a pipeline from an already-`Arc`d handler.
+    pub fn from_arc(handler: Arc<dyn EHandler>) -> Self {
+        Self {
+            middlewares: Vec::new(),
+            handler,
+        }
+    }
+
     /// Adds a middleware to the end of the chain.
     pub fn with(mut self, middleware: impl Middleware + 'static) -> Self {
         self.middlewares.push(Box::new(middleware));

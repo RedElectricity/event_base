@@ -20,6 +20,7 @@ use tokio::sync::RwLock;
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 /// Initializes all global components and starts the system.
 ///
@@ -80,7 +81,21 @@ pub async fn start_system_impl(
     let router = TopicRouter::global().read().await;
     let producer = router.get_producer();
     let trace_layer = TraceLayer::new(producer);
-    Registry::default().with(trace_layer).init();
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_target(true)
+        .with_level(true);
+
+    // 默认只显示 INFO+，可通过 RUST_LOG 覆盖
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    Registry::default()
+        .with(trace_layer)
+        .with(filter)
+        .with(fmt_layer)
+        .init();
 
     let topics_discovery_msg = EMessage::new(
         MessageTopic(SYSTEM_TOPIC_TOPIC_DISCOVERY.to_string()),
