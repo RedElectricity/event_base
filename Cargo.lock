@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "event_base"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "event_base_audit",
  "event_base_core",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_core"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "async-trait",
  "bincode",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_grpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "event_base_core",
  "prost",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_attr"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "quote",
  "syn",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_func"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "event_base_core",

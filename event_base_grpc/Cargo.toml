@@ -1,6 +1,6 @@
 [package]
 name = "event_base_grpc"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["RedElectricity <redelectricity@outlook.com>"]
 description = "An Event Driven Framework - gRPC API Crate"
