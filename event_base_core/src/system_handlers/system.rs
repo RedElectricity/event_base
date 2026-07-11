@@ -30,7 +30,7 @@ use crate::{NodeType, get_node_type};
 use std::sync::Arc;
 use std::time::Duration;
 
-const SYSTEM_WORKER_COUNT: usize = 4;
+const SYSTEM_WORKER_COUNT: usize = 32;
 
 /// 为已注册的系统 Topic 创建固定数量 Worker
 async fn spawn_system_workers(router: &ConsumerRouter, topic: &str, count: usize) -> Result<(), CoreError> {
