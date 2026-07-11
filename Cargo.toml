@@ -1,6 +1,6 @@
 [package]
 name = "event_base"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 authors = ["RedElectricity <redelectricity@outlook.com>"]
 description = "An Event Driven Framework"
@@ -34,7 +34,7 @@ members = ["event_base_core",
 resolver = "3"
 
 [workspace.dependencies]
-event_base_core = { path = "event_base_core", version = "1.4.2" }
+event_base_core = { path = "event_base_core", version = "1.4.3" }
 event_base_wal = { path = "event_base_wal", version = "0.1.2" }
 event_base_queue = { path = "event_base_queue", version = "0.2.0" }
 event_base_audit = { path = "event_base_audit", version = "0.1.1" }
