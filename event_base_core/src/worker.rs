@@ -405,6 +405,23 @@ impl Worker {
         *self.status.lock().await
     }
 
+    /// Processes a **single** message and exits.
+    ///
+    /// This is used by the dynamic scaling feature in
+    /// [`ConsumerRouter`](crate::queues::consumer_router::ConsumerRouter):
+    /// when no idle worker is available, an ephemeral one‑shot worker is
+    /// created and this method is called.  Unlike [`start`](Self::start),
+    /// it does **not** enter a receive loop and does **not** register the
+    /// worker in the router's idle pool — the worker is dropped after
+    /// processing.
+    pub async fn process_one(self: Arc<Self>, msg: EMessage) {
+        // Mark as working so the status reflects active processing
+        *self.status.lock().await = Working;
+        let _ = self.process_msg(msg).await;
+        // Intentionally skip self.set_status(Idle) — this worker is
+        // ephemeral and will be dropped after the task exits.
+    }
+
     /// **Test helper**: directly invokes `process_msg` for integration testing.
     ///
     /// This is equivalent to the private `process_msg` path but exposed for

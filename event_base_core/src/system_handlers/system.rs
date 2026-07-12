@@ -28,7 +28,6 @@ use crate::system_handlers::worker::{WorkerDiscoveryHandler, WorkerHeartbeatHand
 use crate::wal::wal::Wal;
 use crate::{NodeType, get_node_type};
 use std::sync::Arc;
-use std::time::Duration;
 
 const SYSTEM_WORKER_COUNT: usize = 32;
 

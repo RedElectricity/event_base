@@ -8,6 +8,7 @@
 use crate::error::CoreError;
 use crate::error::topic::TopicError;
 use crate::handler::EHandler;
+use crate::message::EMessage;
 use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
 use crate::queues::factory::QueueFactory;
@@ -44,6 +45,10 @@ struct TopicEntry {
     pub producer: Arc<dyn EProducer>,
     pub consumer_factory: Arc<dyn ConsumerFactory>,
     pub handler: Arc<dyn EHandler>,
+    /// Optional pipeline template used when creating ephemeral (one‑shot)
+    /// workers for dynamic scaling.  If `None`, the ephemeral worker will
+    /// use a pipeline built from just the handler (no middleware).
+    pub pipeline: Option<Arc<Pipeline>>,
     pub workers: Vec<String>, // names of workers for this topic
 }
 
@@ -91,8 +96,13 @@ impl ConsumerRouter {
     /// It continuously claims messages from the main consumer. For each claimed
     /// message, it determines the target worker based on the `to_worker` field
     /// or by selecting an idle worker for the topic. It then forwards the message
-    /// to the worker's producer and acknowledges the claim. If no worker is
-    /// available, the message is negatively acknowledged and requeued.
+    /// to the worker's producer and acknowledges the claim.
+    ///
+    /// **Dynamic scaling**: when no idle worker is available for a topic, an
+    /// ephemeral one‑shot worker is automatically created to handle the message.
+    /// That worker processes exactly one message and then exits — it is never
+    /// added to the idle pool and is cleaned up by the tokio runtime when the
+    /// spawned task completes.
     ///
     /// Run the CR dispatch loop. Claims up to `self.batch_size` messages per
     /// batch to amortise lock contention, then dispatches each to the
@@ -122,8 +132,8 @@ impl ConsumerRouter {
             let mut to_nack: Vec<String> = Vec::with_capacity(4);
 
             for claimed in batch {
-                let msg = &claimed.message;
-                let claim_id = claimed.claim_id.clone();
+                let msg = claimed.message;
+                let claim_id = claimed.claim_id;
 
                 if !self.local_topics.read().await.contains_key(&msg.topic.0) {
                     to_nack.push(claim_id);
@@ -146,8 +156,17 @@ impl ConsumerRouter {
                         }
                     },
                     None => {
-                        to_nack.push(claim_id);
-                        tracing::warn!("No free worker, requeue the message: {}", msg.id);
+                        // ── Dynamic scaling: spawn an ephemeral one‑shot worker ──
+                        let topic = msg.topic.0.clone();
+                        match self.create_ephemeral_worker(&topic, msg).await {
+                            Ok(_) => to_ack.push(claim_id),
+                            Err(e) => {
+                                to_nack.push(claim_id);
+                                tracing::error!(
+                                    "Failed to create ephemeral worker: {}", e
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -186,9 +205,29 @@ impl ConsumerRouter {
                 producer,
                 consumer_factory,
                 handler,
+                pipeline: None,
                 workers: vec![],
             },
         );
+        Ok(())
+    }
+
+    /// Associates a pipeline template with a topic, so that ephemeral
+    /// (one‑shot) workers created during dynamic scaling can run with
+    /// the full middleware chain instead of only the raw handler.
+    ///
+    /// # Errors
+    /// Returns `CoreError::TopicNotFound` if the topic is not registered.
+    pub async fn set_pipeline(
+        &self,
+        topic: &str,
+        pipeline: Arc<Pipeline>,
+    ) -> Result<(), CoreError> {
+        let mut map = self.local_topics.write().await;
+        let entry = map
+            .get_mut(topic)
+            .ok_or_else(|| TopicError::NotFound(topic.to_string()))?;
+        entry.pipeline = Some(pipeline);
         Ok(())
     }
 
@@ -288,6 +327,68 @@ impl ConsumerRouter {
         self.register_worker(topic, worker.clone(), handle).await?;
 
         Ok(worker.name.clone())
+    }
+
+    /// Creates an **ephemeral one‑shot worker** for the given topic.
+    ///
+    /// Unlike [`create_worker`](Self::create_worker), this method:
+    /// * Does **not** register the worker in the router's worker index or
+    ///   idle pool — the worker is invisible to future dispatch.
+    /// * Passes the message directly to the worker's `process_one` method
+    ///   instead of entering an infinite receive loop.
+    /// * The spawned task exits after processing the single message.
+    ///
+    /// This is the core of the dynamic‑scaling mechanism: when `recv()`
+    /// finds no idle worker, it calls this method so the message is handled
+    /// immediately without blocking.
+    ///
+    /// If the topic has a pipeline template set via
+    /// [`set_pipeline`](Self::set_pipeline), the ephemeral worker uses it
+    /// (preserving the full middleware chain).  Otherwise it falls back to
+    /// a pipeline built from just the raw handler.
+    ///
+    /// # Errors
+    /// Returns `CoreError::TopicNotFound` if the topic is not registered.
+    async fn create_ephemeral_worker(
+        &self,
+        topic: &str,
+        msg: EMessage,
+    ) -> Result<(), CoreError> {
+        let (producer, consumer_factory, handler, pipeline) = {
+            let map = self.local_topics.read().await;
+            let entry = map
+                .get(topic)
+                .ok_or_else(|| TopicError::NotFound(topic.to_string()))?;
+            (
+                entry.producer.clone(),
+                entry.consumer_factory.clone(),
+                entry.handler.clone(),
+                entry.pipeline.clone(),
+            )
+        }; // ← map dropped, releasing the read lock
+
+        let consumer = consumer_factory.create_consumer();
+
+        // Use the stored pipeline template if available; otherwise build
+        // a minimal pipeline from the raw handler (no middleware).
+        let pipeline = pipeline.unwrap_or_else(|| Arc::new(Pipeline::from_arc(handler)));
+
+        let worker = Arc::new(Worker::new(
+            topic.to_string(),
+            consumer,
+            pipeline,
+            producer,
+            None,                                  // no per‑message timeout
+            Duration::from_millis(50),              // shutdown check interval
+            None,                                  // no shutdown timeout
+        ));
+
+        let w = worker.clone();
+        tokio::spawn(async move {
+            w.process_one(msg).await;
+        });
+
+        Ok(())
     }
 
     /// Retrieves a worker by its name.
