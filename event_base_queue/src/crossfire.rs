@@ -164,12 +164,13 @@ impl ConsumerFactory for MemoryConsumerFactory {
 pub struct MemoryQueueFactory {
     tx: MAsyncTx<Array<EMessage>>,
     rx: MAsyncRx<Array<EMessage>>,
+    capacity: usize,
 }
 
 impl MemoryQueueFactory {
     pub fn new(capacity: usize) -> Self {
         let (tx, rx) = mpmc::bounded_async::<EMessage>(capacity);
-        Self { tx, rx }
+        Self { tx, rx, capacity }
     }
 }
 
@@ -179,11 +180,13 @@ impl QueueFactory for MemoryQueueFactory {
         &self,
         _topic: &str,
     ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), CoreError> {
+        // 每个 topic 独立 channel，避免所有 topic 共享同一条队列
+        let (tx, rx) = mpmc::bounded_async::<EMessage>(self.capacity);
         let producer = Arc::new(CrossfireProducer {
-            tx: self.tx.clone(),
+            tx: tx.clone(),
         });
         let consumer_factory =
-            Arc::new(MemoryConsumerFactory::new(self.tx.clone(), self.rx.clone()));
+            Arc::new(MemoryConsumerFactory::new(tx, rx));
         Ok((producer, consumer_factory))
     }
 

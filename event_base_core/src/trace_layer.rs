@@ -17,6 +17,15 @@ use tracing_core::Subscriber;
 use tracing_serde::AsSerde;
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
+fn spawn_if_runtime<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(future);
+    }
+}
+
 /// A tracing layer that emits trace records as messages.
 pub struct TraceLayer {
     producer: Arc<dyn EProducer>,
@@ -131,7 +140,7 @@ where
             None,
         );
         let producer = self.producer.clone();
-        tokio::spawn(async move {
+        spawn_if_runtime(async move {
             let _ = producer.try_send(msg).await;
         });
     }
@@ -153,7 +162,7 @@ where
                 DeliveryMode::Standard,
                 None,
             );
-            tokio::spawn(async move {
+            spawn_if_runtime(async move {
                 let _ = TopicRouter::global()
                     .read().await
                     .send(SYSTEM_TOPIC_TRACE, msg, None, None)

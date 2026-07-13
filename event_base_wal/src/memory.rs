@@ -1,5 +1,4 @@
 use event_base_core::error::CoreError;
-use event_base_core::error::wal::WalError;
 use event_base_core::wal::wal::{Wal, WalRecord, WalRecordState};
 use event_base_core::worker_registry::WorkerInfo;
 use std::collections::HashMap;
@@ -40,12 +39,24 @@ impl Wal for MemoryWal {
         let mut records = self.records.write().await;
         if let Some(record) = records.get_mut(message_id) {
             record.status = status;
-            Ok(())
         } else {
-            Err(CoreError::from(WalError::RecordNotFound(
-                message_id.to_string(),
-            )))
+            let mut counter = self.id_counter.lock().await;
+            *counter += 1;
+            records.insert(message_id.to_string(), WalRecord {
+                record_id: *counter,
+                message: event_base_core::message::EMessage::new(
+                    event_base_core::message::MessageTopic(String::new()),
+                    event_base_core::message::MessagePayload(Vec::new()),
+                    event_base_core::message::DeliveryMode::Standard,
+                    None,
+                ),
+                status,
+                last_attempt_at: None,
+                is_dead_letter: false,
+                dead_reason: None,
+            });
         }
+        Ok(())
     }
 
     async fn replay_pending(&mut self) -> Result<Vec<WalRecord>, CoreError> {

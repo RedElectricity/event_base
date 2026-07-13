@@ -231,12 +231,12 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    /// Selects an idle worker for the given topic.
+    /// Selects an idle worker for the given topic and removes it from the idle pool.
     ///
     /// Returns the first idle worker, or `None` if none are available.
     async fn select_local_idle_worker(&self, topic: &str) -> Option<Arc<Worker>> {
-        let idle_workers = self.idle_workers.lock().await;
-        let name = idle_workers.get(topic)?.first()?.clone();
+        let mut idle_workers = self.idle_workers.lock().await;
+        let name = idle_workers.get_mut(topic)?.pop()?;
         self.worker_index
             .read()
             .await
@@ -467,18 +467,15 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    /// Marks a worker as idle for its topic (used internally).
-    ///
-    /// This adds the worker to the idle list so it can be selected for dispatch.
+    /// Marks a worker as idle for its topic, adding it to the idle pool so it
+    /// can be selected for dispatch.
     pub(crate) async fn set_idle(
         &self,
         topic: String,
         worker_name: String,
     ) -> Result<(), CoreError> {
         let mut idle_workers = self.idle_workers.lock().await;
-        if let Some(list) = idle_workers.get_mut(&topic) {
-            list.push(worker_name);
-        }
+        idle_workers.entry(topic).or_default().push(worker_name);
         Ok(())
     }
 

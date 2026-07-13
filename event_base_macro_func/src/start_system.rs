@@ -1,26 +1,25 @@
 //! Implementation of the system startup routine.
 
-use event_base_core::NodeType::Host;
 use event_base_core::constant::SYSTEM_TOPIC_TOPIC_DISCOVERY;
 use event_base_core::error::CoreError;
 use event_base_core::message::DeliveryMode::Standard;
 use event_base_core::message::{EMessage, MessagePayload, MessageTopic};
 use event_base_core::queues::consumer_router::ConsumerRouter;
 use event_base_core::queues::factory::QueueFactory;
-use event_base_core::shutdown::{ShutdownSender, shutdown_channel};
+use event_base_core::shutdown::{shutdown_channel, ShutdownSender};
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::system_handlers::topic::TopicDiscoveryMessage;
 use event_base_core::topic::TopicRouter;
 use event_base_core::trace_layer::TraceLayer;
 use event_base_core::wal::wal::Wal;
 use event_base_core::worker_registry::WorkerRegistry;
-use event_base_core::{NodeType, set_node_type};
+use event_base_core::NodeType::Host;
+use event_base_core::{set_node_type, NodeType};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Registry;
 
 /// Initializes all global components and starts the system.
 ///
@@ -83,7 +82,7 @@ pub async fn start_system_impl(
     let trace_layer = TraceLayer::new(producer);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stdout)
+        .with_writer(|| std::io::LineWriter::new(std::io::stdout()))
         .with_target(true)
         .with_level(true);
 

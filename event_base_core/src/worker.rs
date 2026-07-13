@@ -116,7 +116,9 @@ impl Worker {
     }
 
     async fn process_msg(&self, mut msg: EMessage) -> Result<(), CoreError> {
-        if self.topic != SYSTEM_TOPIC_AUDIT {
+        let is_system = self.topic.starts_with("_system.");
+
+        if !is_system && self.topic != SYSTEM_TOPIC_AUDIT {
             if let Err(e) = self
                 .send_audit_msg(self.generate_audit_msg(
                     msg.clone(),
@@ -133,9 +135,11 @@ impl Worker {
 
         let start_time = SystemTime::now();
 
-        self.wal
-            .mark_processing(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
-            .await?;
+        if !is_system {
+            self.wal
+                .mark_processing(msg.clone().id.as_str(), msg.clone().topic.0.as_str())
+                .await?;
+        }
         let status;
 
         if let Some(time) = self.time_out {
@@ -151,6 +155,11 @@ impl Worker {
             }
         } else {
             status = self.pipeline.run(&mut msg).await;
+        }
+
+        // 系统消息：pipeline 跑完直接返回，不写 WAL/audit
+        if is_system {
+            return Ok(());
         }
 
         let finish_time = SystemTime::now();
@@ -408,7 +417,7 @@ impl Worker {
     /// Processes a **single** message and exits.
     ///
     /// This is used by the dynamic scaling feature in
-    /// [`ConsumerRouter`](crate::queues::consumer_router::ConsumerRouter):
+    /// [`ConsumerRouter`](ConsumerRouter):
     /// when no idle worker is available, an ephemeral one‑shot worker is
     /// created and this method is called.  Unlike [`start`](Self::start),
     /// it does **not** enter a receive loop and does **not** register the
