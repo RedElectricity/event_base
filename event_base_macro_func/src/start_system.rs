@@ -19,7 +19,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Registry;
 
 /// Initializes all global components and starts the system.
 ///
@@ -81,19 +80,13 @@ pub async fn start_system_impl(
     let producer = router.get_producer();
     let trace_layer = TraceLayer::new(producer);
 
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_writer(|| std::io::LineWriter::new(std::io::stdout()))
-        .with_target(true)
-        .with_level(true);
-
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,sea_orm=warn"));
 
-    Registry::default()
+    let _ = tracing_subscriber::registry()
         .with(trace_layer)
         .with(filter)
-        .with(fmt_layer)
-        .init();
+        .try_init();
 
     let topics_discovery_msg = EMessage::new(
         MessageTopic(SYSTEM_TOPIC_TOPIC_DISCOVERY.to_string()),
