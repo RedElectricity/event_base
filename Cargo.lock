@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "event_base"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "event_base_audit",
  "event_base_core",
@@ -443,7 +443,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_func"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bincode",
  "event_base_core",
