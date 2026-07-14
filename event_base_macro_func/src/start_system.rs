@@ -86,9 +86,8 @@ pub async fn start_system_impl(
         .with_target(true)
         .with_level(true);
 
-    // 默认只显示 INFO+，可通过 RUST_LOG 覆盖
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,sea_orm=warn"));
 
     Registry::default()
         .with(trace_layer)

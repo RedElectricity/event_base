@@ -13,11 +13,12 @@ use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
 use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
-use crate::worker::Worker;
+use crate::worker::{LocalInboxConsumer, Worker};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::error;
 
@@ -37,6 +38,10 @@ pub struct ConsumerRouter {
     local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic -> TopicEntry)
     worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name -> (worker, handle))
     idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic -> list of idle worker names)
+    dispatch_workers: Arc<Mutex<HashMap<String, Vec<String>>>>, // (topic -> worker names for topic dispatchers)
+    dispatch_enabled: Arc<Mutex<HashMap<String, bool>>>, // (topic -> dispatcher/inbox mode enabled)
+    local_inboxes: Arc<RwLock<HashMap<String, mpsc::Sender<EMessage>>>>, // (worker_name -> local inbox tx)
+    dispatch_generation: Arc<AtomicU64>,
     batch_size: usize,
 }
 
@@ -73,6 +78,10 @@ impl ConsumerRouter {
             worker_index: RwLock::new(HashMap::new()),
             factory,
             idle_workers: Mutex::new(HashMap::new()),
+            dispatch_workers: Arc::new(Mutex::new(HashMap::new())),
+            dispatch_enabled: Arc::new(Mutex::new(HashMap::new())),
+            local_inboxes: Arc::new(RwLock::new(HashMap::new())),
+            dispatch_generation: Arc::new(AtomicU64::new(0)),
             batch_size: batch_size.unwrap_or(DEFAULT_BATCH_SIZE),
         };
         CONSUMER_ROUTER
@@ -192,24 +201,73 @@ impl ConsumerRouter {
     /// # Errors
     /// Returns `CoreError::TopicAlreadyExists` if the topic is already registered.
     pub async fn register(&self, topic: &str, handler: Arc<dyn EHandler>) -> Result<(), CoreError> {
-        let (producer, consumer_factory) = self.factory.create_queue(topic)?;
         let mut map = self.local_topics.write().await;
         if map.contains_key(topic) {
             return Err(CoreError::from(TopicError::AlreadyExists(
                 topic.to_string(),
             )));
         }
+        let (producer, consumer_factory) = self.factory.create_queue(topic)?;
         map.insert(
             topic.to_string(),
             TopicEntry {
                 producer,
-                consumer_factory,
+                consumer_factory: consumer_factory.clone(),
                 handler,
                 pipeline: None,
                 workers: vec![],
             },
         );
         Ok(())
+    }
+
+    fn spawn_topic_dispatcher(&self, topic: String, mut consumer: Box<dyn EConsumer>) {
+        let dispatch_workers = self.dispatch_workers.clone();
+        let local_inboxes = self.local_inboxes.clone();
+        let dispatch_generation = self.dispatch_generation.clone();
+        tokio::spawn(async move {
+            let mut cursor: usize = 0;
+            let mut seen_generation = u64::MAX;
+            let mut cached_workers: Vec<(String, mpsc::Sender<EMessage>)> = Vec::new();
+
+            loop {
+                let Some(mut msg) = consumer.receive().await else {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    continue;
+                };
+
+                let current_generation = dispatch_generation.load(Ordering::Acquire);
+                if current_generation != seen_generation || cached_workers.is_empty() {
+                    let worker_names = {
+                        let map = dispatch_workers.lock().await;
+                        map.get(&topic).cloned().unwrap_or_default()
+                    };
+                    let inboxes = local_inboxes.read().await;
+                    cached_workers = worker_names
+                        .into_iter()
+                        .filter_map(|name| inboxes.get(&name).cloned().map(|tx| (name, tx)))
+                        .collect();
+                    seen_generation = current_generation;
+                    if !cached_workers.is_empty() {
+                        cursor %= cached_workers.len();
+                    }
+                }
+
+                if cached_workers.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    continue;
+                }
+
+                let index = cursor % cached_workers.len();
+                cursor = cursor.wrapping_add(1);
+                let (target, inbox) = cached_workers[index].clone();
+                msg.to_worker = Some(target.clone());
+                if let Err(e) = inbox.try_send(msg) {
+                    tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
+                    seen_generation = u64::MAX;
+                }
+            }
+        });
     }
 
     /// Associates a pipeline template with a topic, so that ephemeral
@@ -267,6 +325,12 @@ impl ConsumerRouter {
         workers_map.insert(worker.name.clone(), (worker.clone(), handle));
         if let Some(entry) = map.get_mut(topic) {
             entry.workers.push(worker.name.clone());
+            let mut dispatch_workers = self.dispatch_workers.lock().await;
+            dispatch_workers
+                .entry(topic.to_string())
+                .or_default()
+                .push(worker.name.clone());
+            self.dispatch_generation.fetch_add(1, Ordering::Release);
             Ok(())
         } else {
             Err(CoreError::from(TopicError::NotFound(topic.to_string())))
@@ -317,6 +381,28 @@ impl ConsumerRouter {
             shutdown_check_interval.unwrap_or(Duration::from_millis(50)),
             shutdown_timeout,
         ));
+
+        let (inbox_tx, inbox_consumer) = LocalInboxConsumer::new(self.batch_size * 4);
+        worker.attach_inbox(inbox_consumer).await;
+        self.local_inboxes
+            .write()
+            .await
+            .insert(worker.name.clone(), inbox_tx);
+
+        let should_start_dispatcher = {
+            let mut enabled = self.dispatch_enabled.lock().await;
+            match enabled.get(topic).copied() {
+                Some(true) => false,
+                _ => {
+                    enabled.insert(topic.to_string(), true);
+                    true
+                }
+            }
+        };
+        if should_start_dispatcher {
+            let consumer = consumer_factory.create_consumer();
+            self.spawn_topic_dispatcher(topic.to_string(), consumer);
+        }
 
         let worker_handle = worker.clone();
 
@@ -437,10 +523,16 @@ impl ConsumerRouter {
         let mut workers = self.worker_index.write().await;
         if let Some((_worker, handle)) = workers.remove(worker_name) {
             handle.abort();
+            self.local_inboxes.write().await.remove(worker_name);
             let mut map = self.local_topics.write().await;
             for entry in map.values_mut() {
                 entry.workers.retain(|id| id != worker_name);
             }
+            let mut dispatch_workers = self.dispatch_workers.lock().await;
+            for workers in dispatch_workers.values_mut() {
+                workers.retain(|id| id != worker_name);
+            }
+            self.dispatch_generation.fetch_add(1, Ordering::Release);
             Ok(())
         } else {
             Err(CoreError::WorkerNotFound(worker_name.to_string()))
@@ -460,10 +552,14 @@ impl ConsumerRouter {
             for worker_index in entry.workers.clone() {
                 if let Some((_, handle)) = worker_map.remove(&worker_index) {
                     handle.abort();
+                    self.local_inboxes.write().await.remove(&worker_index);
                 }
             }
         }
         entries.remove(topic);
+        self.dispatch_workers.lock().await.remove(topic);
+        self.dispatch_enabled.lock().await.remove(topic);
+        self.dispatch_generation.fetch_add(1, Ordering::Release);
         Ok(())
     }
 

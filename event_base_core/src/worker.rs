@@ -10,7 +10,7 @@ use crate::message::DeliveryMode::{Repeated, Standard};
 use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::middleware::Pipeline;
 use crate::queues::consumer_router::ConsumerRouter;
-use crate::queues::{EConsumer, EProducer};
+use crate::queues::{ClaimedMessage, EConsumer, EProducer};
 use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
 use crate::topic::TopicRouter;
 use crate::wal::sync::WalClient;
@@ -18,12 +18,65 @@ use crate::worker::WorkerStatus::{Idle, Working};
 use std::option::Option;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 use tracing::{error, warn};
 use uuid::Uuid;
+
+pub struct LocalInboxConsumer {
+    tx: mpsc::Sender<EMessage>,
+    rx: mpsc::Receiver<EMessage>,
+    pending: Arc<Mutex<HashMap<String, EMessage>>>,
+}
+
+impl LocalInboxConsumer {
+    pub fn new(capacity: usize) -> (mpsc::Sender<EMessage>, Box<dyn EConsumer>) {
+        let (tx, rx) = mpsc::channel(capacity);
+        let consumer = LocalInboxConsumer {
+            tx: tx.clone(),
+            rx,
+            pending: Arc::new(Mutex::new(HashMap::default())),
+        };
+        (tx, Box::new(consumer))
+    }
+}
+
+#[async_trait::async_trait]
+impl EConsumer for LocalInboxConsumer {
+    async fn receive(&mut self) -> Option<EMessage> {
+        self.rx.recv().await
+    }
+
+    async fn claim(&mut self) -> Result<Option<ClaimedMessage>, CoreError> {
+        let msg = match self.rx.recv().await {
+            Some(msg) => msg,
+            None => return Ok(None),
+        };
+        let claim_id = Uuid::new_v4().to_string();
+        self.pending.lock().await.insert(claim_id.clone(), msg.clone());
+        Ok(Some(ClaimedMessage {
+            message: msg,
+            claim_id,
+            claimed_at: SystemTime::now(),
+        }))
+    }
+
+    async fn ack(&mut self, claim_id: &str) -> Result<(), CoreError> {
+        self.pending.lock().await.remove(claim_id);
+        Ok(())
+    }
+
+    async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError> {
+        let msg = self.pending.lock().await.remove(claim_id);
+        if let Some(msg) = msg {
+            self.tx.send(msg).await.map_err(|e| CoreError::Other(e.to_string()))?;
+        }
+        Ok(())
+    }
+}
 
 /// A worker that consumes messages from a topic, processes them via a pipeline,
 /// and handles retries/dead-lettering based on the returned `Ack`.
@@ -31,6 +84,7 @@ pub struct Worker {
     pub topic: String,
     pub name: String,
     pub consumer: Arc<Mutex<Box<dyn EConsumer>>>,
+    pub inbox: Arc<Mutex<Option<Box<dyn EConsumer>>>>,
     pub pipeline: Arc<Pipeline>,
     pub producer: Arc<dyn EProducer>,
     pub time_out: Option<Duration>,
@@ -72,6 +126,7 @@ impl Worker {
             topic,
             name: name.clone(),
             consumer: Arc::new(Mutex::new(consumer)),
+            inbox: Arc::new(Mutex::new(None)),
             pipeline,
             producer,
             time_out,
@@ -90,12 +145,40 @@ impl Worker {
         }
     }
 
+    pub async fn attach_inbox(&self, inbox: Box<dyn EConsumer>) {
+        let mut guard = self.inbox.lock().await;
+        *guard = Some(inbox);
+    }
+
     /// Starts the worker's main loop.
     ///
     /// It repeatedly receives messages, processes them, and handles the returned `Ack`.
     /// It also monitors the shutdown notify to perform graceful shutdown.
     pub async fn start(&self) {
         let mut consumer = self.consumer.lock().await;
+        let mut inbox = self.inbox.lock().await;
+
+        if let Some(inbox) = inbox.as_mut() {
+            loop {
+                tokio::select! {
+                    _ = self.shutdown_notify.notified() => {
+                        let _ = self.shutdown(self.shutdown_check_interval, self.shutdown_timeout).await;
+                        break;
+                    }
+                    msg = inbox.receive() => {
+                        self.set_local_status(Working).await;
+                        if let Some(msg) = msg {
+                            if let Err(e) = self.process_msg(msg).await {
+                                error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process inbox message");
+                            }
+                        }
+                        self.set_local_status(Idle).await;
+                    }
+                }
+            }
+            self.shutdown_complete.store(true, Ordering::SeqCst);
+            return;
+        }
 
         loop {
             tokio::select! {
@@ -106,7 +189,9 @@ impl Worker {
                 msg = consumer.receive() => {
                     self.set_status(Working).await;
                     if let Some(msg) = msg {
-                        let _ = self.process_msg(msg).await;
+                        if let Err(e) = self.process_msg(msg).await {
+                            error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process message");
+                        }
                     }
                     self.set_status(Idle).await;
                 }
@@ -406,6 +491,10 @@ impl Worker {
                     .await;
             }
         };
+        *self.status.lock().await = status;
+    }
+
+    async fn set_local_status(&self, status: WorkerStatus) {
         *self.status.lock().await = status;
     }
 
