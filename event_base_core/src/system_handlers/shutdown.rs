@@ -43,12 +43,13 @@ impl EHandler for ShutdownHandler {
                 poll_interval_ms,
                 force_timeout_secs,
             } => {
-                if let Err(_) = shutdown_all_workers_two_stage(
+                if shutdown_all_workers_two_stage(
                     self.shutdown_tx.clone(),
                     Duration::from_secs(force_timeout_secs),
                     Duration::from_millis(poll_interval_ms),
                 )
                 .await
+                .is_err()
                 {
                     eprintln!("[SHUTDOWN] Fail to shutdown all workers two stage")
                 }
@@ -58,7 +59,7 @@ impl EHandler for ShutdownHandler {
                 poll_interval_ms,
             } => {
                 let result =
-                    graceful_shutdown(&*worker_name, Duration::from_millis(poll_interval_ms)).await;
+                    graceful_shutdown(&worker_name, Duration::from_millis(poll_interval_ms)).await;
                 if let Err(e) = result {
                     eprintln!("[SHUTDOWN]Failed to grace ShutdownCommand: {}", e);
                     return Ack::Ack;

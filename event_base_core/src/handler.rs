@@ -49,17 +49,17 @@ pub enum Ack {
 /// # Examples
 ///
 /// ```
-/// # use event_base::core::{EHandler, EMessage, Ack, DeadReason};
+/// # use event_base_core::handler::{EHandler, Ack, DeadReason};
+/// # use event_base_core::message::EMessage;
 /// # use async_trait::async_trait;
-/// # use std::time::Duration;
 /// struct MyHandler;
 ///
 /// #[async_trait]
 /// impl EHandler for MyHandler {
 ///     async fn handler(&self, msg: &EMessage) -> Ack {
 ///         // Process the message...
-///         if msg.payload().is_empty() {
-///             Ack::Dead { dead_reason: DeadReason::InvalidPayload }
+///         if msg.payload.0.is_empty() {
+///             Ack::Dead { dead_reason: DeadReason::Explicit }
 ///         } else {
 ///             Ack::Ack
 ///         }

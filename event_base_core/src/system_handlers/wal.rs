@@ -46,7 +46,7 @@ impl EHandler for WalSyncHandler {
             );
         }
 
-        if let Err(_) = wal.flush().await {
+        if wal.flush().await.is_err() {
             eprintln!("[SYSTEM] Failed to flush WAL");
         }
 

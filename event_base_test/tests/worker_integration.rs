@@ -205,6 +205,11 @@ fn message(topic: &str, payload: &[u8], mode: DeliveryMode) -> EMessage {
     )
 }
 
+/// Statement-scoped router guard (see deadlock note in the test body).
+async fn router() -> tokio::sync::RwLockReadGuard<'static, ConsumerRouter> {
+    ConsumerRouter::global().read().await
+}
+
 // ──────────────────────────────────────────────
 // THE BIG COMBINED TEST
 // ──────────────────────────────────────────────
@@ -248,8 +253,10 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     });
-    let cr = ConsumerRouter::global().write().await;
-    cr.register("test-topic", handler.clone())
+    ConsumerRouter::global()
+        .read()
+        .await
+        .register("test-topic", handler.clone())
         .await
         .expect("register should succeed");
 
@@ -273,19 +280,23 @@ async fn worker_and_router_and_shutdown_integration() {
         .expect("create_worker should succeed");
     assert!(worker_name.starts_with("worker-test-topic-"));
 
-    drop(cr);
     // ──────── ConsumerRouter: get_worker, get_workers, get_all_workers ────────
-    let cr = ConsumerRouter::global().read().await;
-    let w = cr.get_worker(&worker_name).await.expect("get_worker");
+    // NOTE: guards here are statement-scoped via router(); a read guard held
+    // across the shutdown_* calls below would self-deadlock (they take write).
+    let w = router()
+        .await
+        .get_worker(&worker_name)
+        .await
+        .expect("get_worker");
     assert_eq!(w.name, worker_name);
 
-    let workers_for_topic = cr.get_workers("test-topic").await;
+    let workers_for_topic = router().await.get_workers("test-topic").await;
     assert_eq!(workers_for_topic.len(), 1);
 
-    let all_workers = cr.get_all_workers().await;
+    let all_workers = router().await.get_all_workers().await;
     assert_eq!(all_workers.len(), 1);
 
-    let handler_check = cr.get_handler("test-topic").await;
+    let handler_check = router().await.get_handler("test-topic").await;
     assert!(handler_check.is_some());
 
     // ──────── Worker: status and topic ────────
@@ -302,16 +313,17 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    let w2_name = cr
+    let w2_name = router()
+        .await
         .create_worker("test-topic", pipeline2, None, None, None)
         .await
         .expect("create worker 2");
-    assert_eq!(cr.get_all_workers().await.len(), 2);
+    assert_eq!(router().await.get_all_workers().await.len(), 2);
 
     graceful_shutdown(&w2_name, Duration::from_millis(10))
         .await
         .expect("graceful_shutdown should succeed");
-    assert_eq!(cr.get_all_workers().await.len(), 1);
+    assert_eq!(router().await.get_all_workers().await.len(), 1);
 
     // ──────── Test shutdown methods: shutdown_force ────────
     info!("=== STAGE: shutdown_force ===");
@@ -320,20 +332,23 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    let _ = cr
+    let _ = router()
+        .await
         .create_worker("test-topic", pipeline3, None, None, None)
         .await;
-    assert_eq!(cr.get_all_workers().await.len(), 2);
+    assert_eq!(router().await.get_all_workers().await.len(), 2);
 
     shutdown_force().await;
-    assert_eq!(cr.get_all_workers().await.len(), 0);
+    assert_eq!(router().await.get_all_workers().await.len(), 0);
 
     // Re-create a worker for remaining tests
     let pipeline4 = Arc::new(Pipeline::new(Box::new(TestHandler {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    cr.create_worker("test-topic", pipeline4, None, None, None)
+    router()
+        .await
+        .create_worker("test-topic", pipeline4, None, None, None)
         .await
         .expect("create worker for remaining tests");
 
@@ -343,14 +358,16 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    cr.create_worker("test-topic", pipeline5, None, None, None)
+    router()
+        .await
+        .create_worker("test-topic", pipeline5, None, None, None)
         .await
         .expect("create worker for idle test");
-    assert_eq!(cr.get_all_workers().await.len(), 2);
+    assert_eq!(router().await.get_all_workers().await.len(), 2);
 
     shutdown_idle_only().await;
     // Both workers are idle, so both should be removed
-    assert!(cr.get_all_workers().await.len() <= 2);
+    assert!(router().await.get_all_workers().await.len() <= 2);
 
     // ──────── Test shutdown methods: shutdown_timeout ────────
     info!("=== STAGE: shutdown_timeout ===");
@@ -358,12 +375,14 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    cr.create_worker("test-topic", pipeline6, None, None, None)
+    router()
+        .await
+        .create_worker("test-topic", pipeline6, None, None, None)
         .await
         .expect("create worker for timeout test");
 
     shutdown_timeout(Duration::from_millis(5)).await;
-    assert_eq!(cr.get_all_workers().await.len(), 0);
+    assert_eq!(router().await.get_all_workers().await.len(), 0);
 
     // ──────── Test shutdown methods: shutdown_batched ────────
     info!("=== STAGE: shutdown_batched ===");
@@ -372,14 +391,16 @@ async fn worker_and_router_and_shutdown_integration() {
             call_count: Arc::new(AtomicUsize::new(0)),
             response: Ack::Ack,
         })));
-        cr.create_worker("test-topic", p, None, None, None)
+        router()
+            .await
+            .create_worker("test-topic", p, None, None, None)
             .await
             .expect("create worker for batched test");
     }
-    assert_eq!(cr.get_all_workers().await.len(), 4);
+    assert_eq!(router().await.get_all_workers().await.len(), 4);
 
     shutdown_batched(2, Duration::from_millis(5)).await;
-    assert_eq!(cr.get_all_workers().await.len(), 0);
+    assert_eq!(router().await.get_all_workers().await.len(), 0);
 
     // ──────── Test shutdown methods: two_stage ────────
     info!("=== STAGE: two_stage shutdown ===");
@@ -388,7 +409,9 @@ async fn worker_and_router_and_shutdown_integration() {
             call_count: Arc::new(AtomicUsize::new(0)),
             response: Ack::Ack,
         })));
-        cr.create_worker("test-topic", p, None, None, None)
+        router()
+            .await
+            .create_worker("test-topic", p, None, None, None)
             .await
             .expect("create worker for two_stage test");
     }
@@ -401,7 +424,7 @@ async fn worker_and_router_and_shutdown_integration() {
     )
     .await
     .expect("two_stage shutdown should succeed");
-    assert_eq!(cr.get_all_workers().await.len(), 0);
+    assert_eq!(router().await.get_all_workers().await.len(), 0);
 
     // ──────── Test ShutdownCommand serialization and handler ────────
     // The ShutdownHandler is registered on SYSTEM_TOPIC_SHUTDOWN
@@ -427,16 +450,19 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    let del_name = cr
+    let del_name = router()
+        .await
         .create_worker("test-topic", p_del, None, None, None)
         .await
         .expect("create worker for del test");
 
     // del_worker
-    cr.del_worker(&del_name)
+    router()
+        .await
+        .del_worker(&del_name)
         .await
         .expect("del_worker should succeed");
-    let err = cr.get_worker(&del_name).await;
+    let err = router().await.get_worker(&del_name).await;
     assert!(err.is_err());
     match err {
         Err(e) => assert!(e.to_string().contains("Worker Not Found")),
@@ -448,15 +474,17 @@ async fn worker_and_router_and_shutdown_integration() {
         call_count: Arc::new(AtomicUsize::new(0)),
         response: Ack::Ack,
     })));
-    let _ = cr
+    let _ = router()
+        .await
         .create_worker("test-topic", p_del2, None, None, None)
         .await;
-    cr.del_workers("test-topic")
+    router()
+        .await
+        .del_workers("test-topic")
         .await
         .expect("del_workers should succeed");
-    assert_eq!(cr.get_all_workers().await.len(), 0);
+    assert_eq!(router().await.get_all_workers().await.len(), 0);
 
-    drop(cr);
     // Verify del_worker on non-existent returns error
     let err = ConsumerRouter::global()
         .write()

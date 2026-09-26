@@ -512,11 +512,7 @@ impl RedisStreamQueueFactory {
         Ok(Self::assemble(conn, client, config))
     }
 
-    fn assemble(
-        conn: ConnectionManager,
-        client: redis::Client,
-        config: RedisQueueConfig,
-    ) -> Self {
+    fn assemble(conn: ConnectionManager, client: redis::Client, config: RedisQueueConfig) -> Self {
         let main_key = config.stream_key("_default");
         let main_consumer = Arc::new(Mutex::new(RedisStreamConsumer::new(
             client.clone(),

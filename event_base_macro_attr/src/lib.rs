@@ -39,20 +39,20 @@
 //! # Example
 //!
 //! ```no_run
-//! use event_base_core::handler::{Ack, EHandler};
-//! use event_base_core::message::EMessage;
-//! use event_base_macro::handler;
+//! use event_base::core::handler::Ack;
+//! use event_base::core::message::EMessage;
+//! use event_base::macro_attr::handler;
 //!
 //! #[handler(
 //!     topic = "user.signup",
 //!     workers = 3,
 //!     timeout = 30,
 //!     shutdown_timeout = 10,
-//!     shutdown_check_interval = 100,
-//!     middleware = [MyMiddleware, AnotherMiddleware]
+//!     shutdown_check_interval = 100
 //! )]
 //! async fn handle_signup(msg: &EMessage) -> Ack {
 //!     // ... processing logic ...
+//!     let _ = msg;
 //!     Ack::Ack
 //! }
 //! ```

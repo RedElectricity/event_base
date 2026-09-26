@@ -25,7 +25,8 @@ pub mod start_system;
 ///   Pass `None` for no timeout.
 ///
 /// # Returns
-/// A future that resolves to `Result<(), CoreError>`.
+/// `Result<(), CoreError>`. The macro expands to an expression that already
+/// contains the `.await`, so call sites must **not** await it again.
 ///
 /// # Example
 /// ```
@@ -38,7 +39,7 @@ pub mod start_system;
 ///     DeliveryMode::Standard,
 ///     None,
 /// );
-/// send_msg!(msg, None, None).await?;
+/// send_msg!(msg, None, None)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -65,24 +66,29 @@ macro_rules! send_msg {
 ///   indicating the role of this node.
 ///
 /// # Returns
-/// A `Result<ShutdownSender, CoreError>` – the shutdown sender can be used
-/// to trigger graceful shutdown of all workers.
+/// `Result<ShutdownSender, CoreError>` – the shutdown sender can be used
+/// to trigger graceful shutdown of all workers. Like [`send_msg!`], the macro
+/// expands to an already‑awaited expression; do not add a `.await` at the
+/// call site.
 ///
 /// # Example
 /// ```no_run
-/// # use event_base_core::{NodeType, set_node_type};
+/// # use event_base_core::NodeType;
 /// # use event_base_core::queues::factory::QueueFactory;
 /// # use event_base_core::wal::wal::Wal;
 /// # use event_base_core::system_handlers::system::SystemHandlerBuilder;
-/// # use event_base_core::shutdown::ShutdownSender;
+/// # use event_base_core::shutdown::shutdown_channel;
 /// # use std::sync::Arc;
 /// # use tokio::sync::RwLock;
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let factory: Arc<dyn QueueFactory> = // ... create queue factory
-/// # unimplemented!();
-/// let wal: Box<dyn Wal> = // ... create WAL
-/// # unimplemented!();
-/// let builder = SystemHandlerBuilder::new(Arc::new(RwLock::new(wal)), shutdown_tx, 1024);
+/// let factory: Arc<dyn QueueFactory> = unimplemented!();
+/// let wal: Box<dyn Wal> = unimplemented!();
+/// let (shutdown_tx, _shutdown_rx) = shutdown_channel();
+/// let builder = SystemHandlerBuilder::new(
+///     Arc::new(RwLock::new(event_base_wal::memory::MemoryWal::new())),
+///     shutdown_tx,
+///     1024,
+/// );
 /// let shutdown_tx = event_base_macro_func::start_system!(
 ///     factory,
 ///     wal,

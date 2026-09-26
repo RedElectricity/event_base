@@ -103,7 +103,7 @@ pub async fn start_system_impl(
         None,
     );
 
-    if let Err(_) = router
+    if router
         .send(
             SYSTEM_TOPIC_TOPIC_DISCOVERY,
             topics_discovery_msg,
@@ -111,6 +111,7 @@ pub async fn start_system_impl(
             None,
         )
         .await
+        .is_err()
     {
         eprintln!("[START UP] Failed to send topic discovery message")
     }

@@ -33,6 +33,9 @@ pub struct LocalInboxConsumer {
 }
 
 impl LocalInboxConsumer {
+    /// Builds the `(sender, consumer)` pair for a worker's local inbox — a
+    /// channel factory, hence the non-`Self` return (like `mpsc::channel`).
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(capacity: usize) -> (mpsc::Sender<EMessage>, Box<dyn EConsumer>) {
         let (tx, rx) = mpsc::channel(capacity);
         let consumer = LocalInboxConsumer {
@@ -173,11 +176,10 @@ impl Worker {
                     }
                     msg = inbox.receive() => {
                         self.set_local_status(Working).await;
-                        if let Some(msg) = msg {
-                            if let Err(e) = self.process_msg(msg).await {
+                        if let Some(msg) = msg
+                            && let Err(e) = self.process_msg(msg).await {
                                 error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process inbox message");
                             }
-                        }
                         self.set_local_status(Idle).await;
                     }
                 }
@@ -194,11 +196,10 @@ impl Worker {
                 }
                 msg = consumer.receive() => {
                     self.set_status(Working).await;
-                    if let Some(msg) = msg {
-                        if let Err(e) = self.process_msg(msg).await {
+                    if let Some(msg) = msg
+                        && let Err(e) = self.process_msg(msg).await {
                             error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process message");
                         }
-                    }
                     self.set_status(Idle).await;
                 }
             }
@@ -209,8 +210,9 @@ impl Worker {
     async fn process_msg(&self, mut msg: EMessage) -> Result<(), CoreError> {
         let is_system = self.topic.starts_with("_system.");
 
-        if !is_system && self.topic != SYSTEM_TOPIC_AUDIT {
-            if let Err(e) = self
+        if !is_system
+            && self.topic != SYSTEM_TOPIC_AUDIT
+            && let Err(e) = self
                 .send_audit_msg(self.generate_audit_msg(
                     msg.clone(),
                     AuditResult::Start,
@@ -219,9 +221,8 @@ impl Worker {
                     None,
                 ))
                 .await
-            {
-                error!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
-            }
+        {
+            error!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
         }
 
         let start_time = SystemTime::now();
@@ -277,8 +278,8 @@ impl Worker {
                     self.requeue_message(msg).await?;
                     return Ok(());
                 }
-                if self.topic != SYSTEM_TOPIC_AUDIT {
-                    if let Err(e) = self
+                if self.topic != SYSTEM_TOPIC_AUDIT
+                    && let Err(e) = self
                         .send_audit_msg(self.generate_audit_msg(
                             msg.clone(),
                             AuditResult::Success,
@@ -287,9 +288,8 @@ impl Worker {
                             Option::from(process_time),
                         ))
                         .await
-                    {
-                        eprintln!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
-                    }
+                {
+                    eprintln!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
                 }
                 self.wal
                     .mark_complete(
@@ -419,8 +419,8 @@ impl Worker {
             .send(&dead_letter_topic_name, msg.clone(), None, None)
             .await?;
 
-        if self.topic != SYSTEM_TOPIC_AUDIT {
-            if let Err(e) = self
+        if self.topic != SYSTEM_TOPIC_AUDIT
+            && let Err(e) = self
                 .send_audit_msg(self.generate_audit_msg(
                     msg.clone(),
                     AuditResult::Dead,
@@ -429,9 +429,8 @@ impl Worker {
                     Option::from(process_time),
                 ))
                 .await
-            {
-                eprintln!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
-            }
+        {
+            eprintln!("[AUDIT_ERROR] Failed to send audit msg: {}", e);
         }
         Ok(())
     }
@@ -454,14 +453,14 @@ impl Worker {
         let start = SystemTime::now();
 
         while self.get_status().await == Working {
-            if let Some(to) = timeout {
-                if start.elapsed().unwrap_or_default() > to {
-                    warn!(
-                        "[SHUTDOWN] Worker {} shutdown timeout, force exit",
-                        self.name.clone()
-                    );
-                    break;
-                }
+            if let Some(to) = timeout
+                && start.elapsed().unwrap_or_default() > to
+            {
+                warn!(
+                    "[SHUTDOWN] Worker {} shutdown timeout, force exit",
+                    self.name.clone()
+                );
+                break;
             }
             tokio::time::sleep(check_interval).await;
         }

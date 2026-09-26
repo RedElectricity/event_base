@@ -74,8 +74,10 @@ impl EventBase for EventBaseService {
             .get_workers(topic.as_str())
             .await
         {
-            let mut response: ListWorkersResponse = ListWorkersResponse::default();
-            response.total = workers.len() as u32;
+            let mut response = ListWorkersResponse {
+                total: workers.len() as u32,
+                ..Default::default()
+            };
             for worker in workers {
                 let info = WorkerInfo {
                     worker_name: worker.worker_name,
@@ -141,42 +143,33 @@ impl EventBase for EventBaseService {
         let command = request.into_inner();
 
         if let Some(strategy) = command.strategy {
-            let shutdown_msg: ShutdownCommand;
-            match strategy {
-                Strategy::TwoStage(ts) => {
-                    shutdown_msg = ShutdownCommand {
-                        strategy: ShutdownStrategy::TwoStage {
-                            poll_interval_ms: ts.poll_interval_ms,
-                            force_timeout_secs: ts.force_timeout_secs,
-                        },
-                    };
-                }
-                Strategy::Graceful(graceful) => {
-                    shutdown_msg = ShutdownCommand {
-                        strategy: Graceful {
-                            worker_name: graceful.worker_name,
-                            poll_interval_ms: graceful.poll_interval_ms,
-                        },
-                    }
-                }
-                Strategy::Force(..) => shutdown_msg = ShutdownCommand { strategy: Force },
-                Strategy::StateBasedIdle(..) => {
-                    shutdown_msg = ShutdownCommand {
-                        strategy: StateBasedIdle,
-                    }
-                }
-                Strategy::Batched(batched) => {
-                    shutdown_msg = ShutdownCommand {
-                        strategy: Batched {
-                            batch_size: batched.batch_size as usize,
-                            interval_ms: batched.interval_ms,
-                        },
-                    }
-                }
+            let shutdown_msg = match strategy {
+                Strategy::TwoStage(ts) => ShutdownCommand {
+                    strategy: ShutdownStrategy::TwoStage {
+                        poll_interval_ms: ts.poll_interval_ms,
+                        force_timeout_secs: ts.force_timeout_secs,
+                    },
+                },
+                Strategy::Graceful(graceful) => ShutdownCommand {
+                    strategy: Graceful {
+                        worker_name: graceful.worker_name,
+                        poll_interval_ms: graceful.poll_interval_ms,
+                    },
+                },
+                Strategy::Force(..) => ShutdownCommand { strategy: Force },
+                Strategy::StateBasedIdle(..) => ShutdownCommand {
+                    strategy: StateBasedIdle,
+                },
+                Strategy::Batched(batched) => ShutdownCommand {
+                    strategy: Batched {
+                        batch_size: batched.batch_size as usize,
+                        interval_ms: batched.interval_ms,
+                    },
+                },
                 _ => {
                     return Err(Status::invalid_argument("Invalid strategy"));
                 }
-            }
+            };
             let msg = EMessage::new(
                 MessageTopic(SYSTEM_TOPIC_SHUTDOWN.parse().unwrap()),
                 MessagePayload(serde_json::to_vec(&shutdown_msg).unwrap()),

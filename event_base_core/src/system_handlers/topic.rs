@@ -77,11 +77,12 @@ impl EHandler for TopicDiscovery {
             None,
         );
 
-        if let Err(_) = TopicRouter::global()
+        if TopicRouter::global()
             .read()
             .await
             .send(SYSTEM_TOPIC_TOPIC_SYNC, topics_sync_msg, None, None)
             .await
+            .is_err()
         {
             eprintln!("[TOPIC DISCOVERY] Failed to send topic sync message")
         }

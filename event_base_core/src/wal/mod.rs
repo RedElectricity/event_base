@@ -5,4 +5,7 @@
 
 pub mod codec;
 pub mod sync;
+// `wal::wal` is the path every consumer (and the published docs) already use;
+// renaming the submodule would be a breaking change for zero benefit.
+#[allow(clippy::module_inception)]
 pub mod wal;

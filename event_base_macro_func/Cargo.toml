@@ -14,3 +14,6 @@ event_base_core.workspace = true
 tokio = { version = "1.52.3", features = ["full"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 bincode = "2.0.1"
+
+[dev-dependencies]
+event_base_wal.workspace = true

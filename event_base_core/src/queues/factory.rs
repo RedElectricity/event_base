@@ -10,6 +10,10 @@ use crate::queues::{EConsumer, EProducer};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// A topic's `(producer, consumer factory)` pair, as returned by
+/// [`QueueFactory::create_queue`].
+pub type QueuePair = (Arc<dyn EProducer>, Arc<dyn ConsumerFactory>);
+
 /// A factory that creates producers and consumers for message queues.
 ///
 /// Implementations are responsible for setting up the underlying messaging
@@ -26,14 +30,11 @@ pub trait QueueFactory: Send + Sync {
     /// * `topic` - The name of the topic/queue.
     ///
     /// # Returns
-    /// A tuple of `(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>)`.
+    /// A [`QueuePair`] of `(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>)`.
     ///
     /// # Errors
     /// Returns `CoreError` if the topic cannot be created or configured.
-    fn create_queue(
-        &self,
-        topic: &str,
-    ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), CoreError>;
+    fn create_queue(&self, topic: &str) -> Result<QueuePair, CoreError>;
 
     /// Creates a global producer that can send messages to any topic.
     ///

@@ -101,23 +101,29 @@ async fn core_workflow_covers_global_paths() {
 
     eprintln!("stage: router setup");
 
-    let registry = WorkerRegistry::global().write().await;
-    registry
-        .register(worker_info(
-            "retire-me",
-            "orders",
-            now - Duration::from_secs(60),
-        ))
-        .await
-        .expect("worker register should succeed");
-    registry
-        .register(worker_info(
-            "stale-worker",
-            "orders",
-            now - Duration::from_secs(3_600),
-        ))
-        .await
-        .expect("worker register should succeed");
+    // Registry methods take `&self` (interior RwLock on the worker map), so a
+    // READ guard suffices — and it MUST be scoped: a guard held across the
+    // test would self-deadlock when the broadcast path / shutdown handler
+    // later acquires its own registry lock.
+    {
+        let registry = WorkerRegistry::global().read().await;
+        registry
+            .register(worker_info(
+                "retire-me",
+                "orders",
+                now - Duration::from_secs(60),
+            ))
+            .await
+            .expect("worker register should succeed");
+        registry
+            .register(worker_info(
+                "stale-worker",
+                "orders",
+                now - Duration::from_secs(3_600),
+            ))
+            .await
+            .expect("worker register should succeed");
+    }
 
     TopicRouter::global()
         .write()
@@ -299,7 +305,9 @@ async fn core_workflow_covers_global_paths() {
 
     eprintln!("stage: replay complete");
 
-    let stale = registry
+    let stale = WorkerRegistry::global()
+        .read()
+        .await
         .cleanup_stale(Duration::from_secs(300))
         .await
         .expect("cleanup should succeed");

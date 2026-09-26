@@ -87,19 +87,19 @@ impl TopicRouter {
         for record in pending {
             let msg = record.message;
 
-            if let Some(ref allowed) = topic_filter {
-                if !allowed.contains(&msg.topic.0) {
-                    continue;
-                }
+            if let Some(ref allowed) = topic_filter
+                && !allowed.contains(&msg.topic.0)
+            {
+                continue;
             }
 
-            if let Some(deliver_at) = msg.deliver_at {
-                if deliver_at > SystemTime::now() {
-                    let guard = wal.write().await;
-                    guard.schedule(WalRecord::from_msg(msg)).await?;
-                    summary.delayed += 1;
-                    continue;
-                }
+            if let Some(deliver_at) = msg.deliver_at
+                && deliver_at > SystemTime::now()
+            {
+                let guard = wal.write().await;
+                guard.schedule(WalRecord::from_msg(msg)).await?;
+                summary.delayed += 1;
+                continue;
             }
 
             let mut msg = msg;

@@ -40,11 +40,12 @@ impl EHandler for WorkerDiscoveryHandler {
             last_heartbeat: SystemTime::now(),
         };
 
-        if let Err(_) = WorkerRegistry::global()
+        if WorkerRegistry::global()
             .write()
             .await
             .register(worker)
             .await
+            .is_err()
         {
             eprintln!("[WORKER DISCOVERY]register worker failed")
         }

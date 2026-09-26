@@ -517,6 +517,9 @@ dependencies = [
 name = "event_base_macro_attr"
 version = "0.3.2"
 dependencies = [
+ "async-trait",
+ "event_base",
+ "linkme",
  "quote",
  "syn 2.0.118",
 ]
@@ -527,6 +530,7 @@ version = "0.4.1"
 dependencies = [
  "bincode",
  "event_base_core",
+ "event_base_wal",
  "tokio",
  "tracing-subscriber",
 ]

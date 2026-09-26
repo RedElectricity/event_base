@@ -15,3 +15,11 @@ proc-macro = true
 [dependencies]
 quote = "1.0"
 syn = { version = "2.0", features = ["full", "extra-traits"] }
+
+[dev-dependencies]
+# The #[handler] expansion targets the `event_base` umbrella (`::event_base::core`
+# and `linkme`), so doctests need it plus linkme in scope. Cyclic dev-deps are
+# explicitly allowed by cargo.
+event_base = { path = "..", version = "0.7.0", features = ["macro"] }
+linkme = "0.3.36"
+async-trait = "0.1.89"

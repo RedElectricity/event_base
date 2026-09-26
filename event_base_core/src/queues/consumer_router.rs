@@ -26,6 +26,9 @@ static CONSUMER_ROUTER: OnceLock<RwLock<ConsumerRouter>> = OnceLock::new();
 
 const DEFAULT_BATCH_SIZE: usize = 64;
 
+/// Worker name → (`Worker` instance, join handle).
+type WorkerIndex = HashMap<String, (Arc<Worker>, JoinHandle<()>)>;
+
 /// The global router that dispatches messages to workers.
 ///
 /// It maintains:
@@ -36,7 +39,7 @@ pub struct ConsumerRouter {
     consumer: Arc<Mutex<dyn EConsumer>>,
     factory: Arc<dyn QueueFactory>,
     local_topics: RwLock<HashMap<String, TopicEntry>>, // (topic -> TopicEntry)
-    worker_index: RwLock<HashMap<String, (Arc<Worker>, JoinHandle<()>)>>, // (worker_name -> (worker, handle))
+    worker_index: RwLock<WorkerIndex>,
     idle_workers: Mutex<HashMap<String, Vec<String>>>, // (topic -> list of idle worker names)
     dispatch_workers: Arc<Mutex<HashMap<String, Vec<String>>>>, // (topic -> worker names for topic dispatchers)
     dispatch_enabled: Arc<Mutex<HashMap<String, bool>>>, // (topic -> dispatcher/inbox mode enabled)
@@ -477,9 +480,9 @@ impl ConsumerRouter {
     /// Returns `CoreError::WorkerNotFound` if the worker does not exist.
     pub async fn get_worker(&self, worker_name: &str) -> Result<Arc<Worker>, CoreError> {
         let workers = self.worker_index.read().await;
-        let (worker, _) = workers.get(worker_name).ok_or_else(|| {
-            return CoreError::WorkerNotFound(worker_name.to_string());
-        })?;
+        let (worker, _) = workers
+            .get(worker_name)
+            .ok_or_else(|| CoreError::WorkerNotFound(worker_name.to_string()))?;
         Ok(worker.clone())
     }
 

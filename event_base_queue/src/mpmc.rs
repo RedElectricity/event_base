@@ -67,7 +67,7 @@ impl EConsumer for MpmcConsumer {
     async fn receive(&mut self) -> Option<EMessage> {
         let msg = self.rx.recv().await;
         if let Ok(msg) = msg {
-            return Option::from(msg);
+            return msg;
         }
         None
     }
