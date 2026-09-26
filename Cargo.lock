@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_macro_attr"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "event_base",
