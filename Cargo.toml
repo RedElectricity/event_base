@@ -38,7 +38,7 @@ event_base_core = { path = "event_base_core", version = "1.7.1" }
 event_base_wal = { path = "event_base_wal", version = "0.3.0" }
 event_base_queue = { path = "event_base_queue", version = "0.5.1" }
 event_base_audit = { path = "event_base_audit", version = "0.1.1" }
-event_base_grpc = { path = "event_base_grpc", version = "0.1.2" }
+event_base_grpc = { path = "event_base_grpc", version = "0.1.3" }
 event_base_macro_attr = { path = "event_base_macro_attr", version = "0.3.3" }
 event_base_macro_func = { path = "event_base_macro_func", version = "0.4.2" }
 event_base_middleware = { path = "event_base_middleware", version = "0.1.0" }

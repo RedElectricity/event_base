@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "event_base_grpc"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "event_base_core",
  "prost",
