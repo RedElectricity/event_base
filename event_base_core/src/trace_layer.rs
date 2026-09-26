@@ -164,7 +164,8 @@ where
             );
             spawn_if_runtime(async move {
                 let _ = TopicRouter::global()
-                    .read().await
+                    .read()
+                    .await
                     .send(SYSTEM_TOPIC_TRACE, msg, None, None)
                     .await;
             });

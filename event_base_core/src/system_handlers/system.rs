@@ -32,12 +32,20 @@ use std::sync::Arc;
 const SYSTEM_WORKER_COUNT: usize = 32;
 
 /// 为已注册的系统 Topic 创建固定数量 Worker
-async fn spawn_system_workers(router: &ConsumerRouter, topic: &str, count: usize) -> Result<(), CoreError> {
-    let handler = router.get_handler(topic).await
+async fn spawn_system_workers(
+    router: &ConsumerRouter,
+    topic: &str,
+    count: usize,
+) -> Result<(), CoreError> {
+    let handler = router
+        .get_handler(topic)
+        .await
         .ok_or_else(|| CoreError::Other(format!("handler for {topic} not found")))?;
     let pipeline = Arc::new(crate::middleware::Pipeline::from_arc(handler));
     for _ in 0..count {
-        router.create_worker(topic, pipeline.clone(), None, None, None).await?;
+        router
+            .create_worker(topic, pipeline.clone(), None, None, None)
+            .await?;
     }
     Ok(())
 }

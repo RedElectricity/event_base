@@ -45,7 +45,7 @@ event_base_middleware = { path = "event_base_middleware", version = "0.1.0" }
 
 [features]
 default = ["memory", "macro"]
-full = ["gRPC", "middleware", "macro", "memory", "persistent","audit"]
+full = ["gRPC", "middleware", "macro", "memory", "persistent","audit","redis"]
 
 gRPC = []
 middleware = []
@@ -53,3 +53,4 @@ audit = []
 memory = []
 persistent = []
 macro = []
+redis = ["event_base_queue/redis", "event_base_wal/redis"]

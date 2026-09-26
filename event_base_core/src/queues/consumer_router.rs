@@ -15,10 +15,10 @@ use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
 use crate::worker::{LocalInboxConsumer, Worker};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::error;
 
@@ -171,9 +171,7 @@ impl ConsumerRouter {
                             Ok(_) => to_ack.push(claim_id),
                             Err(e) => {
                                 to_nack.push(claim_id);
-                                tracing::error!(
-                                    "Failed to create ephemeral worker: {}", e
-                                );
+                                tracing::error!("Failed to create ephemeral worker: {}", e);
                             }
                         }
                     }
@@ -435,11 +433,7 @@ impl ConsumerRouter {
     ///
     /// # Errors
     /// Returns `CoreError::TopicNotFound` if the topic is not registered.
-    async fn create_ephemeral_worker(
-        &self,
-        topic: &str,
-        msg: EMessage,
-    ) -> Result<(), CoreError> {
+    async fn create_ephemeral_worker(&self, topic: &str, msg: EMessage) -> Result<(), CoreError> {
         let (producer, consumer_factory, handler, pipeline) = {
             let map = self.local_topics.read().await;
             let entry = map
@@ -464,9 +458,9 @@ impl ConsumerRouter {
             consumer,
             pipeline,
             producer,
-            None,                                  // no per‑message timeout
-            Duration::from_millis(50),              // shutdown check interval
-            None,                                  // no shutdown timeout
+            None,                      // no per‑message timeout
+            Duration::from_millis(50), // shutdown check interval
+            None,                      // no shutdown timeout
         ));
 
         let w = worker.clone();

@@ -165,9 +165,12 @@ fn dead_letter_and_shutdown_roundtrip() {
         attempts: 5,
     };
 
-    let bytes = bincode::encode_to_vec(&dead_letter, bincode::config::standard()).expect("dead letter should serialize");
+    let bytes = bincode::encode_to_vec(&dead_letter, bincode::config::standard())
+        .expect("dead letter should serialize");
     let decoded: DeadLetterMessage =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("dead letter should deserialize").0;
+        bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .expect("dead letter should deserialize")
+            .0;
     assert_eq!(decoded.attempts, 5);
     assert!(matches!(decoded.dead_reason, DeadReason::Timeout));
     assert_eq!(decoded.original_message.topic.0, "dead.letter");
@@ -199,9 +202,12 @@ fn dead_letter_and_shutdown_roundtrip() {
         timestamp: SystemTime::now(),
         error: None,
     };
-    let ack_bytes = bincode::encode_to_vec(&ack, bincode::config::standard()).expect("shutdown ack should serialize");
+    let ack_bytes = bincode::encode_to_vec(&ack, bincode::config::standard())
+        .expect("shutdown ack should serialize");
     let decoded_ack: ShutdownAck =
-        bincode::decode_from_slice(&ack_bytes, bincode::config::standard()).expect("shutdown ack should deserialize").0;
+        bincode::decode_from_slice(&ack_bytes, bincode::config::standard())
+            .expect("shutdown ack should deserialize")
+            .0;
     assert_eq!(decoded_ack.worker_name, "worker-a");
 }
 

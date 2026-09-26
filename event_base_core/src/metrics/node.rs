@@ -50,12 +50,19 @@ impl NodeCollector {
             let metrics = self.collect().await;
             let msg = EMessage::new(
                 MessageTopic(SYSTEM_TOPIC_METRICS.to_string()),
-                message::MessagePayload(bincode::encode_to_vec(&metrics, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
+                message::MessagePayload(
+                    bincode::encode_to_vec(&metrics, bincode::config::standard()).map_err(|e| {
+                        CoreError::Serialize(
+                            crate::error::serialize::SerializeError::SerializeError(e.to_string()),
+                        )
+                    })?,
+                ),
                 Standard,
                 None,
             );
             TopicRouter::global()
-                .read().await
+                .read()
+                .await
                 .send(SYSTEM_TOPIC_METRICS, msg, None, None)
                 .await?;
             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -77,7 +84,12 @@ impl NodeCollector {
 
         let memory_used_percent = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
-        let node_worker_count = ConsumerRouter::global().read().await.get_all_workers().await.len();
+        let node_worker_count = ConsumerRouter::global()
+            .read()
+            .await
+            .get_all_workers()
+            .await
+            .len();
 
         NodeMetrics {
             node_name: get_node_name(),

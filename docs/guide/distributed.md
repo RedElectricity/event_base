@@ -159,7 +159,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-> In a distributed setup, nodes must share a queue backend (e.g., Redis, Kafka via custom `QueueFactory`). The built-in `MemoryQueueFactory` only works for single-process deployments.
+> In a distributed setup, nodes must share a queue backend. The built-in `MemoryQueueFactory` only works for single-process deployments — for multiple processes enable the `redis` feature and point every node at the same Redis:
+
+```rust
+use event_base::prelude::*;
+use event_base::redis_streams::{RedisQueueConfig, RedisStreamQueueFactory};
+use event_base::redis_wal::RedisWal;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    set_node_name("host-1".to_string());
+
+    let factory = RedisStreamQueueFactory::with_config(
+        RedisQueueConfig::new("redis://127.0.0.1:6379"),
+    )
+    .await?;
+    let wal = RedisWal::new("redis://127.0.0.1:6379").await?;
+
+    start_queue_system! {
+        factory: factory,
+        wal: Some(wal),
+    }
+
+    tokio::signal::ctrl_c().await?;
+    Ok(())
+}
+```
+
+Every topic becomes a Redis stream (`{prefix}:{topic}`) consumed through one
+shared consumer group, so workers on different machines compete for messages
+instead of each getting their own copy. Use a node-unique WAL `prefix`
+(`RedisWal::with_prefix`) unless you deliberately want one shared write-ahead
+log across nodes. Kafka and friends remain possible via a custom
+`QueueFactory`/`Wal` implementation.
 
 ---
 

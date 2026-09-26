@@ -54,7 +54,8 @@ async fn worker_registry_full_lifecycle() {
 
     // ---- get_all_workers after init ----
     let all = WorkerRegistry::global()
-        .read().await
+        .read()
+        .await
         .get_all_workers()
         .await
         .expect("get_all should succeed");

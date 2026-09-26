@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use crossfire::mpmc::Array;
+use crossfire::{MAsyncRx, MAsyncTx, mpmc};
 use event_base_core::error::CoreError;
 use event_base_core::error::queue::QueueError;
 use event_base_core::message::EMessage;
@@ -8,8 +10,6 @@ use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use crossfire::{mpmc, MAsyncRx, MAsyncTx};
-use crossfire::mpmc::Array;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
@@ -57,9 +57,9 @@ impl EProducer for CrossfireProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        tokio::time::timeout(timeout, 
-                             self.send(msg))
-            .await.unwrap_or_else(|_elapsed| Err(CoreError::from(QueueError::Timeout)))
+        tokio::time::timeout(timeout, self.send(msg))
+            .await
+            .unwrap_or_else(|_elapsed| Err(CoreError::from(QueueError::Timeout)))
     }
 }
 
@@ -97,7 +97,9 @@ impl EProducer for RoutingProducer {
                 topic
             ))));
         }
-        tx.send(msg).await.map_err(|e| CoreError::from(QueueError::Send(e.to_string())))
+        tx.send(msg)
+            .await
+            .map_err(|e| CoreError::from(QueueError::Send(e.to_string())))
     }
 
     async fn try_send(&self, msg: EMessage) -> Result<(), CoreError> {
@@ -123,12 +125,15 @@ impl EProducer for RoutingProducer {
                 }
             }
         };
-        tx.send(msg).await.map_err(|e| CoreError::from(QueueError::Send(e.to_string())))
+        tx.send(msg)
+            .await
+            .map_err(|e| CoreError::from(QueueError::Send(e.to_string())))
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
         tokio::time::timeout(timeout, self.send(msg))
-            .await.unwrap_or_else(|_| Err(CoreError::from(QueueError::Timeout)))
+            .await
+            .unwrap_or_else(|_| Err(CoreError::from(QueueError::Timeout)))
     }
 }
 
@@ -260,14 +265,13 @@ impl QueueFactory for MemoryQueueFactory {
         let (tx, rx) = mpmc::bounded_async::<EMessage>(self.capacity);
 
         // 注册到 routing table，让 RoutingProducer 能直送达 per-topic channel
-        self.topic_producers.try_write().expect("create_queue: routing table lock contention")
+        self.topic_producers
+            .try_write()
+            .expect("create_queue: routing table lock contention")
             .insert(topic.to_string(), tx.clone());
 
-        let producer = Arc::new(CrossfireProducer {
-            tx: tx.clone(),
-        });
-        let consumer_factory =
-            Arc::new(MemoryConsumerFactory::new(tx, rx));
+        let producer = Arc::new(CrossfireProducer { tx: tx.clone() });
+        let consumer_factory = Arc::new(MemoryConsumerFactory::new(tx, rx));
         Ok((producer, consumer_factory))
     }
 

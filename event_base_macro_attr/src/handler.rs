@@ -50,7 +50,10 @@ impl Parse for HandlerArgsParsed {
                 let mw: Expr = input.parse()?;
                 middleware = Some(mw);
             } else {
-                return Err(syn::Error::new(name.span(), format!("unknown argument: {}", name)));
+                return Err(syn::Error::new(
+                    name.span(),
+                    format!("unknown argument: {}", name),
+                ));
             }
 
             // Skip optional comma

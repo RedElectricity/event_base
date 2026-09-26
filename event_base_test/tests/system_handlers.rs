@@ -196,7 +196,10 @@ fn topic_discovery_message_serialization_roundtrip() {
         has_topics: vec!["orders".to_string(), "payments".to_string()],
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: TopicDiscoveryMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: TopicDiscoveryMessage =
+        bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .expect("deserialize")
+            .0;
     assert_eq!(decoded.has_topics.len(), 2);
     assert!(decoded.has_topics.contains(&"orders".to_string()));
 }
@@ -205,7 +208,10 @@ fn topic_discovery_message_serialization_roundtrip() {
 fn topic_discovery_message_empty_topics() {
     let msg = TopicDiscoveryMessage { has_topics: vec![] };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: TopicDiscoveryMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: TopicDiscoveryMessage =
+        bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .expect("deserialize")
+            .0;
     assert!(decoded.has_topics.is_empty());
 }
 
@@ -215,7 +221,9 @@ fn topic_sync_message_serialization_roundtrip() {
         topics: vec!["t1".to_string(), "t2".to_string(), "t3".to_string()],
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: TopicSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: TopicSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize")
+        .0;
     assert_eq!(decoded.topics.len(), 3);
 }
 
@@ -223,7 +231,9 @@ fn topic_sync_message_serialization_roundtrip() {
 fn topic_sync_message_empty_topics() {
     let msg = TopicSyncMessage { topics: vec![] };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: TopicSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: TopicSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize")
+        .0;
     assert!(decoded.topics.is_empty());
 }
 
@@ -240,7 +250,9 @@ fn wal_sync_message_serialization_roundtrip() {
         timestamp: SystemTime::now(),
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize")
+        .0;
     assert_eq!(decoded.message_id, "msg-1");
     assert_eq!(decoded.attempts, 1);
     assert!(decoded.error.is_none());
@@ -259,7 +271,9 @@ fn wal_sync_message_with_error_field() {
         timestamp: SystemTime::now(),
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize")
+        .0;
     assert_eq!(decoded.error.as_deref(), Some("handler timeout"));
     assert_eq!(decoded.status, WalRecordState::Failed);
 }
@@ -283,7 +297,10 @@ fn wal_sync_message_all_states() {
             timestamp: SystemTime::now(),
         };
         let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-        let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+        let decoded: WalSyncMessage =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("deserialize")
+                .0;
         assert_eq!(decoded.status, *state);
     }
 }
@@ -296,7 +313,10 @@ fn worker_discovery_message_serialization_roundtrip() {
         started_at: SystemTime::now(),
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: WorkerDiscoveryMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: WorkerDiscoveryMessage =
+        bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .expect("deserialize")
+            .0;
     assert_eq!(decoded.worker_name, "worker-a");
     assert_eq!(decoded.topic, "orders");
 }
@@ -308,7 +328,10 @@ fn worker_heartbeat_message_serialization_roundtrip() {
         timestamp: SystemTime::now(),
     };
     let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize");
-    let decoded: WorkerHeartbeatMessage = bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize").0;
+    let decoded: WorkerHeartbeatMessage =
+        bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .expect("deserialize")
+            .0;
     assert_eq!(decoded.worker_name, "worker-b");
 }
 

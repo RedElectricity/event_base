@@ -1,6 +1,8 @@
+pub mod crossfire;
 pub mod flume;
 pub mod mpmc;
-pub mod crossfire;
+#[cfg(feature = "redis")]
+pub mod redis_streams;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

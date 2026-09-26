@@ -56,9 +56,9 @@ impl EProducer for MpmcProducer {
     }
 
     async fn send_timeout(&self, msg: EMessage, timeout: Duration) -> Result<(), CoreError> {
-        tokio::time::timeout(timeout,
-                             self.send(msg))
-            .await.unwrap_or_else(|_elapsed| Err(CoreError::from(QueueError::Timeout)))
+        tokio::time::timeout(timeout, self.send(msg))
+            .await
+            .unwrap_or_else(|_elapsed| Err(CoreError::from(QueueError::Timeout)))
     }
 }
 

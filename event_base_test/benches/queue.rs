@@ -11,7 +11,7 @@
 //! - `system_process`: Worker::test_process_msg pipeline (handler + middleware + WAL + audit)
 
 use async_trait::async_trait;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use event_base_core::audit::AuditManager;
 use event_base_core::handler::{Ack, EHandler};
 use event_base_core::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
@@ -24,7 +24,7 @@ use event_base_core::topic::TopicRouter;
 use event_base_core::wal::wal::{Wal, WalRecord};
 use event_base_core::worker::Worker;
 use event_base_core::worker_registry::WorkerRegistry;
-use event_base_core::{set_node_name, set_node_type, NodeType};
+use event_base_core::{NodeType, set_node_name, set_node_type};
 use event_base_queue::{crossfire, flume, mpmc};
 use event_base_test::support::{RecordingProducer, RecordingWal};
 use std::sync::Arc;
@@ -138,7 +138,8 @@ impl EProducer for BenchProducer {
 
 // ── System setup (once per process) ──────────────────────────────────────────
 
-static BENCH_PRODUCER: std::sync::OnceLock<std::sync::RwLock<Arc<dyn EProducer>>> = std::sync::OnceLock::new();
+static BENCH_PRODUCER: std::sync::OnceLock<std::sync::RwLock<Arc<dyn EProducer>>> =
+    std::sync::OnceLock::new();
 
 fn system_init() {
     SYSTEM_INIT.call_once(|| {
@@ -331,7 +332,11 @@ fn bench_topic_send(c: &mut Criterion) {
     system_init();
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        TopicRouter::global().write().await.register_topic(bench_topic()).await;
+        TopicRouter::global()
+            .write()
+            .await
+            .register_topic(bench_topic())
+            .await;
     });
 
     let mut group = c.benchmark_group("system_send");
@@ -407,7 +412,9 @@ fn bench_worker_process(c: &mut Criterion, label: &str, pipeline: Arc<Pipeline>)
     let t = bench_topic();
 
     rt.block_on(async {
-        ConsumerRouter::global().write().await
+        ConsumerRouter::global()
+            .write()
+            .await
             .register(t, Arc::new(AckHandler))
             .await
             .expect("register");
@@ -532,21 +539,34 @@ fn bench_full_pipeline_cr(c: &mut Criterion, worker_count: usize) {
     rt.block_on(async {
         let cr = ConsumerRouter::global().write().await;
         // Register + create workers only if not already done (OnceLock pattern)
-        cr.register(&topic, Arc::new(CountingHandler(count.clone()))).await
+        cr.register(&topic, Arc::new(CountingHandler(count.clone())))
+            .await
             .or_else(|e| {
-                if matches!(&e, event_base_core::error::CoreError::Topic(event_base_core::error::topic::TopicError::AlreadyExists(_))) {
+                if matches!(
+                    &e,
+                    event_base_core::error::CoreError::Topic(
+                        event_base_core::error::topic::TopicError::AlreadyExists(_)
+                    )
+                ) {
                     Ok(())
                 } else {
                     Err(e)
                 }
-            }).expect("register topic");
+            })
+            .expect("register topic");
         // Check if workers already exist for this topic
         let existing = cr.get_workers(&topic).await;
         if existing.is_empty() {
             for _ in 0..worker_count {
-                cr.create_worker(&topic, Arc::new(Pipeline::new(Box::new(CountingHandler(count.clone())))), None, None, None)
-                    .await
-                    .expect("create worker");
+                cr.create_worker(
+                    &topic,
+                    Arc::new(Pipeline::new(Box::new(CountingHandler(count.clone())))),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .expect("create worker");
             }
         }
         drop(cr);
@@ -566,7 +586,12 @@ fn bench_full_pipeline_cr(c: &mut Criterion, worker_count: usize) {
 
     // Pre‑create messages
     let all_msgs = pre_create(total as u64);
-    let producer = BENCH_PRODUCER.get().expect("BENCH_PRODUCER not set").read().expect("BENCH_PRODUCER poisoned").clone();
+    let producer = BENCH_PRODUCER
+        .get()
+        .expect("BENCH_PRODUCER not set")
+        .read()
+        .expect("BENCH_PRODUCER poisoned")
+        .clone();
 
     let mut group = c.benchmark_group("system_full_pipeline_cr");
     group.throughput(Throughput::Elements(total as u64));

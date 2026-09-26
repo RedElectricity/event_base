@@ -39,19 +39,24 @@ pub struct TopicDiscovery {}
 #[async_trait]
 impl EHandler for TopicDiscovery {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let topics: TopicDiscoveryMessage = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
-            Ok((r, _)) => r,
-            Err(e) => {
-                tracing::error!("Failed to deserialize topic discovery message: {}", e);
-                return Ack::Ack;
-            }
-        };
+        let topics: TopicDiscoveryMessage =
+            match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+                Ok((r, _)) => r,
+                Err(e) => {
+                    tracing::error!("Failed to deserialize topic discovery message: {}", e);
+                    return Ack::Ack;
+                }
+            };
 
         let topic_list = TopicRouter::global().read().await.list_topics().await;
 
         for item in topics.has_topics {
             if !topic_list.contains(&item) {
-                TopicRouter::global().write().await.register_topic(&item).await;
+                TopicRouter::global()
+                    .write()
+                    .await
+                    .register_topic(&item)
+                    .await;
             }
         }
 
@@ -60,9 +65,12 @@ impl EHandler for TopicDiscovery {
         let topics_sync_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_TOPIC_SYNC.to_string()),
             MessagePayload(
-                bincode::encode_to_vec(&TopicSyncMessage {
-                    topics: updated_topics,
-                }, bincode::config::standard())
+                bincode::encode_to_vec(
+                    &TopicSyncMessage {
+                        topics: updated_topics,
+                    },
+                    bincode::config::standard(),
+                )
                 .unwrap_or_default(),
             ),
             Standard,
@@ -70,7 +78,8 @@ impl EHandler for TopicDiscovery {
         );
 
         if let Err(_) = TopicRouter::global()
-            .read().await
+            .read()
+            .await
             .send(SYSTEM_TOPIC_TOPIC_SYNC, topics_sync_msg, None, None)
             .await
         {
@@ -94,19 +103,24 @@ impl EHandler for TopicSync {
         if get_node_type() == Arc::from(Host) {
             return Ack::Ack;
         }
-        let topics: TopicSyncMessage = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
-            Ok((r, _)) => r,
-            Err(e) => {
-                tracing::error!("Failed to deserialize topic sync message: {}", e);
-                return Ack::Ack;
-            }
-        };
+        let topics: TopicSyncMessage =
+            match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+                Ok((r, _)) => r,
+                Err(e) => {
+                    tracing::error!("Failed to deserialize topic sync message: {}", e);
+                    return Ack::Ack;
+                }
+            };
 
         let topic_list = TopicRouter::global().read().await.list_topics().await;
 
         for item in topics.topics {
             if !topic_list.contains(&item) {
-                TopicRouter::global().write().await.register_topic(&item).await;
+                TopicRouter::global()
+                    .write()
+                    .await
+                    .register_topic(&item)
+                    .await;
             }
         }
 

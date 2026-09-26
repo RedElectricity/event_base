@@ -18,10 +18,10 @@
 | **Events** | EMessage + Handler + Ack | Type-safe message envelope with async handlers and explicit ack semantics |
 | **DX** | Macro-driven | `#[handler]`, `send_msg!`, `start_queue_system!` — zero boilerplate |
 | **Delivery** | 3 modes | Standard (competing consumers), Broadcast (all workers), Repeated (N times) |
-| **Persistence** | WAL | Write-ahead log with crash recovery — `MemoryWal` and `PersistentWal` |
+| **Persistence** | WAL | Write-ahead log with crash recovery — `MemoryWal`, `PersistentWal`, and `RedisWal` (feature `redis`) |
 | **Resilience** | Dead Letter Queue | Automatic DLQ after max retries or explicit `Ack::Dead` |
 | **Resilience** | Backpressure | `try_send` (non-blocking) and `send_timeout` |
-| **Distributed** | Host/Worker | Node roles with discovery (`_system.worker_discovery`) and topic sync |
+| **Distributed** | Host/Worker | Node roles with discovery (`_system.worker_discovery`) and topic sync; share queues across processes with the Redis backend (feature `redis`) |
 | **Shutdown** | 7 strategies | TwoStage, Force, Timeout, Graceful, StateBasedIdle, Batched, Timeout |
 | **Observability** | Audit | Built-in audit logging (`_system.audit`) with ring buffer and custom writers |
 | **Observability** | Tracing | Distributed tracing via `tracing` crate + `TraceLayer` |
@@ -76,6 +76,7 @@ event_base = { version = "0.1", features = ["full"] }
 | `memory` | In-memory queue (`flume`) and WAL (`MemoryWal`) | ✅ |
 | `macro` | `#[handler]` attribute and `send_msg!` / `start_system!` macros | ✅ |
 | `persistent` | File-based `PersistentWal` | ❌ |
+| `redis` | Redis Streams queue factory + `RedisWal` backend | ❌ |
 | `middleware` | Built-in middleware (Logger, etc.) | ❌ |
 | `gRPC` | gRPC management API (query, shutdown, metrics) | ❌ |
 | `audit` | Audit logging subsystem | ❌ |

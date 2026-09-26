@@ -38,7 +38,12 @@ impl EventBase for EventBaseService {
         request: Request<ListNodeMetricsRequest>,
     ) -> Result<Response<NodeMetrics>, Status> {
         let node_name = request.into_inner().node_name;
-        if let Some(metrics) = MetricsStore::global().read().await.get_node(node_name.as_str()).await {
+        if let Some(metrics) = MetricsStore::global()
+            .read()
+            .await
+            .get_node(node_name.as_str())
+            .await
+        {
             return Ok(Response::new(NodeMetrics {
                 node_name: metrics.node_name,
                 node_type: metrics.node_type as i32,
@@ -63,7 +68,12 @@ impl EventBase for EventBaseService {
             return Err(Status::invalid_argument("Worker type is not supported"));
         }
         let topic = request.into_inner().topic;
-        if let Ok(workers) = WorkerRegistry::global().read().await.get_workers(topic.as_str()).await {
+        if let Ok(workers) = WorkerRegistry::global()
+            .read()
+            .await
+            .get_workers(topic.as_str())
+            .await
+        {
             let mut response: ListWorkersResponse = ListWorkersResponse::default();
             response.total = workers.len() as u32;
             for worker in workers {
@@ -95,7 +105,12 @@ impl EventBase for EventBaseService {
         &self,
         _: Request<Empty>,
     ) -> Result<Response<TopicStatsResponse>, Status> {
-        let snapshot = MetricsManager::global().read().await.snapshot().await.business;
+        let snapshot = MetricsManager::global()
+            .read()
+            .await
+            .snapshot()
+            .await
+            .business;
 
         let mut latency_sum_resp: HashMap<String, LatencyStats> = HashMap::new();
 
@@ -169,7 +184,8 @@ impl EventBase for EventBaseService {
                 None,
             );
             let result = TopicRouter::global()
-                .read().await
+                .read()
+                .await
                 .send(SYSTEM_TOPIC_SHUTDOWN, msg, None, None)
                 .await;
             if let Err(e) = result {

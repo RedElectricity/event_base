@@ -6,11 +6,11 @@
 
 use crate::error::CoreError;
 use async_trait::async_trait;
+use bincode::{Decode, Encode};
 use futures::future::join_all;
 use ringbuf::HeapRb;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::RingBuffer;
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -114,9 +114,7 @@ impl AuditManager {
     /// # Panics
     /// Panics if the manager has not been initialized.
     pub fn global() -> &'static RwLock<AuditManager> {
-        AUDIT_MANAGER
-            .get()
-            .expect("AuditManager not initialized")
+        AUDIT_MANAGER.get().expect("AuditManager not initialized")
     }
 
     /// Records an audit event.

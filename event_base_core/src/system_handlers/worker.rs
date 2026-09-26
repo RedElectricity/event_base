@@ -21,7 +21,10 @@ pub struct WorkerDiscoveryHandler {}
 impl EHandler for WorkerDiscoveryHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
         let info: WorkerDiscoveryMessage =
-            match bincode::decode_from_slice::<WorkerDiscoveryMessage, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
+            match bincode::decode_from_slice::<WorkerDiscoveryMessage, _>(
+                msg.payload.0.as_slice(),
+                bincode::config::standard(),
+            ) {
                 Ok((msg, _)) => msg,
                 Err(e) => {
                     eprintln!(
@@ -37,7 +40,12 @@ impl EHandler for WorkerDiscoveryHandler {
             last_heartbeat: SystemTime::now(),
         };
 
-        if let Err(_) = WorkerRegistry::global().write().await.register(worker).await {
+        if let Err(_) = WorkerRegistry::global()
+            .write()
+            .await
+            .register(worker)
+            .await
+        {
             eprintln!("[WORKER DISCOVERY]register worker failed")
         }
         Ack::Ack
@@ -54,7 +62,10 @@ pub struct WorkerHeartbeatHandler {}
 impl EHandler for WorkerHeartbeatHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
         let heartbeat: WorkerHeartbeatMessage =
-            match bincode::decode_from_slice::<WorkerHeartbeatMessage, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
+            match bincode::decode_from_slice::<WorkerHeartbeatMessage, _>(
+                msg.payload.0.as_slice(),
+                bincode::config::standard(),
+            ) {
                 Ok((msg, _)) => msg,
                 Err(e) => {
                     eprintln!(
@@ -66,7 +77,8 @@ impl EHandler for WorkerHeartbeatHandler {
             };
 
         if let Err(e) = WorkerRegistry::global()
-            .write().await
+            .write()
+            .await
             .heartbeat(&heartbeat.worker_name)
             .await
         {

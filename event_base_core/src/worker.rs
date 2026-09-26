@@ -15,13 +15,13 @@ use crate::shutdown::messages::{ShutdownAck, ShutdownStatus};
 use crate::topic::TopicRouter;
 use crate::wal::sync::WalClient;
 use crate::worker::WorkerStatus::{Idle, Working};
+use std::collections::HashMap;
 use std::option::Option;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{mpsc, Mutex};
 use tokio::sync::Notify;
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::timeout;
 use tracing::{error, warn};
 use uuid::Uuid;
@@ -56,7 +56,10 @@ impl EConsumer for LocalInboxConsumer {
             None => return Ok(None),
         };
         let claim_id = Uuid::new_v4().to_string();
-        self.pending.lock().await.insert(claim_id.clone(), msg.clone());
+        self.pending
+            .lock()
+            .await
+            .insert(claim_id.clone(), msg.clone());
         Ok(Some(ClaimedMessage {
             message: msg,
             claim_id,
@@ -72,7 +75,10 @@ impl EConsumer for LocalInboxConsumer {
     async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError> {
         let msg = self.pending.lock().await.remove(claim_id);
         if let Some(msg) = msg {
-            self.tx.send(msg).await.map_err(|e| CoreError::Other(e.to_string()))?;
+            self.tx
+                .send(msg)
+                .await
+                .map_err(|e| CoreError::Other(e.to_string()))?;
         }
         Ok(())
     }
@@ -316,7 +322,8 @@ impl Worker {
                     if let Some(delay) = retry_after {
                         msg.deliver_at = SystemTime::now().checked_add(delay);
                         TopicRouter::global()
-                            .read().await
+                            .read()
+                            .await
                             .send(&msg.clone().topic.0, msg.clone(), None, None)
                             .await?;
                         Ok(())
@@ -371,12 +378,20 @@ impl Worker {
     }
 
     async fn send_audit_msg(&self, record: AuditRecord) -> Result<(), CoreError> {
-        let payload = bincode::encode_to_vec(&record, bincode::config::standard())
-            .map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?;
+        let payload =
+            bincode::encode_to_vec(&record, bincode::config::standard()).map_err(|e| {
+                CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(
+                    e.to_string(),
+                ))
+            })?;
         let mut msg = self.audit_template.clone();
         msg.payload = MessagePayload(payload);
         msg.id = Uuid::new_v4().to_string();
-        TopicRouter::global().read().await.send_system(msg, None, None).await?;
+        TopicRouter::global()
+            .read()
+            .await
+            .send_system(msg, None, None)
+            .await?;
         Ok(())
     }
 
@@ -399,7 +414,8 @@ impl Worker {
             .await?;
 
         TopicRouter::global()
-            .read().await
+            .read()
+            .await
             .send(&dead_letter_topic_name, msg.clone(), None, None)
             .await?;
 
@@ -459,13 +475,20 @@ impl Worker {
 
         let ack_msg = EMessage::new(
             MessageTopic(SYSTEM_TOPIC_SHUTDOWN_ACK.to_string()),
-            MessagePayload(bincode::encode_to_vec(&ack, bincode::config::standard()).map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?),
+            MessagePayload(
+                bincode::encode_to_vec(&ack, bincode::config::standard()).map_err(|e| {
+                    CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(
+                        e.to_string(),
+                    ))
+                })?,
+            ),
             Standard,
             None,
         );
 
         TopicRouter::global()
-            .read().await
+            .read()
+            .await
             .send(SYSTEM_TOPIC_SHUTDOWN_ACK, ack_msg, None, None)
             .await?;
         Ok(())
@@ -480,13 +503,15 @@ impl Worker {
         match status {
             Idle => {
                 let _ = ConsumerRouter::global()
-                    .write().await
+                    .write()
+                    .await
                     .set_idle(self.topic.clone(), self.name.clone())
                     .await;
             }
             Working => {
                 let _ = ConsumerRouter::global()
-                    .write().await
+                    .write()
+                    .await
                     .set_working(self.topic.clone(), self.name.clone())
                     .await;
             }

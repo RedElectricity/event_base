@@ -1,20 +1,20 @@
 //! Implementation of the system startup routine.
 
+use event_base_core::NodeType::Host;
 use event_base_core::constant::SYSTEM_TOPIC_TOPIC_DISCOVERY;
 use event_base_core::error::CoreError;
 use event_base_core::message::DeliveryMode::Standard;
 use event_base_core::message::{EMessage, MessagePayload, MessageTopic};
 use event_base_core::queues::consumer_router::ConsumerRouter;
 use event_base_core::queues::factory::QueueFactory;
-use event_base_core::shutdown::{shutdown_channel, ShutdownSender};
+use event_base_core::shutdown::{ShutdownSender, shutdown_channel};
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::system_handlers::topic::TopicDiscoveryMessage;
 use event_base_core::topic::TopicRouter;
 use event_base_core::trace_layer::TraceLayer;
 use event_base_core::wal::wal::Wal;
 use event_base_core::worker_registry::WorkerRegistry;
-use event_base_core::NodeType::Host;
-use event_base_core::{set_node_type, NodeType};
+use event_base_core::{NodeType, set_node_type};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::layer::SubscriberExt;
@@ -91,9 +91,12 @@ pub async fn start_system_impl(
     let topics_discovery_msg = EMessage::new(
         MessageTopic(SYSTEM_TOPIC_TOPIC_DISCOVERY.to_string()),
         MessagePayload(
-            bincode::encode_to_vec(&TopicDiscoveryMessage {
-                has_topics: router.list_topics().await,
-            }, bincode::config::standard())
+            bincode::encode_to_vec(
+                &TopicDiscoveryMessage {
+                    has_topics: router.list_topics().await,
+                },
+                bincode::config::standard(),
+            )
             .unwrap_or_default(),
         ),
         Standard,

@@ -47,6 +47,19 @@ jobs:
           - --features "memory,macro,persistent"
           - --features "memory,macro,persistent,audit"
       fail-fast: false
+    # Real Redis for the queue/WAL backend integration tests
+    # (event_base_test/tests/redis_*.rs). They are skipped locally unless
+    # EVENT_BASE_TEST_REDIS_URL is set.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +76,11 @@ jobs:
 
       - name: cargo test (${{ matrix.features }})
         run: cargo test ${{ matrix.features }} --workspace -- --nocapture
+
+      - name: cargo test redis backends
+        env:
+          EVENT_BASE_TEST_REDIS_URL: redis://127.0.0.1:6379
+        run: cargo test -p event_base_test --features redis -- --nocapture
 
   # ──────── Benchmark ────────
   bench:

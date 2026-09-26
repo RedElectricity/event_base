@@ -59,9 +59,7 @@ impl TopicRouter {
     /// # Panics
     /// Panics if the router has not been initialized.
     pub fn global() -> &'static RwLock<TopicRouter> {
-        TOPIC_ROUTER
-            .get()
-            .expect("TopicRouter not initialized")
+        TOPIC_ROUTER.get().expect("TopicRouter not initialized")
     }
 
     /// Replays pending messages from the WAL, optionally filtering by topics.
@@ -73,7 +71,9 @@ impl TopicRouter {
     /// Returns `CoreError` if WAL operations fail.
     pub async fn replay(&self, topics: Option<&[&str]>) -> Result<ReplaySummary, CoreError> {
         let wr = WorkerRegistry::global().read().await;
-        let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
+        let wal = wr
+            .wal()
+            .ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
 
         let pending = {
             let mut guard = wal.write().await;
@@ -139,7 +139,9 @@ impl TopicRouter {
         // them immediately on the next tick.
         if let Some(_deliver_at) = msg.deliver_at {
             let wr = WorkerRegistry::global().read().await;
-            let wal = wr.wal().ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
+            let wal = wr
+                .wal()
+                .ok_or_else(|| CoreError::Unsupported("WAL not available".into()))?;
             let guard = wal.write().await;
             guard.schedule(WalRecord::from_msg(msg)).await?;
             return Ok(());
@@ -151,7 +153,11 @@ impl TopicRouter {
                     "Unsupported node type, send broadcast message must host".to_string(),
                 ));
             }
-            let workers = WorkerRegistry::global().read().await.get_workers(topic).await?;
+            let workers = WorkerRegistry::global()
+                .read()
+                .await
+                .get_workers(topic)
+                .await?;
             for worker_index in workers {
                 let mut copy = msg.clone();
                 copy.id = format!("{}-{}", msg.id, worker_index.worker_name);

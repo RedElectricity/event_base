@@ -19,15 +19,21 @@ pub struct AuditHandler {}
 #[async_trait]
 impl EHandler for AuditHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let record: AuditRecord = match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
-            Ok((r, _)) => r,
-            Err(e) => {
-                tracing::error!("Failed to deserialize audit record: {}", e);
-                return Ack::Ack;
-            }
-        };
+        let record: AuditRecord =
+            match bincode::decode_from_slice(&msg.payload.0, bincode::config::standard()) {
+                Ok((r, _)) => r,
+                Err(e) => {
+                    tracing::error!("Failed to deserialize audit record: {}", e);
+                    return Ack::Ack;
+                }
+            };
 
-        if let Err(e) = AuditManager::global().write().await.record(record.clone()).await {
+        if let Err(e) = AuditManager::global()
+            .write()
+            .await
+            .record(record.clone())
+            .await
+        {
             eprintln!(
                 "[AUDIT_ERROR] Audit writer failed for msg {}: {}",
                 record.message_id, e

@@ -36,9 +36,7 @@ impl MetricsStore {
     /// # Panics
     /// Panics if the store has not been initialized.
     pub fn global() -> &'static RwLock<MetricsStore> {
-        METRICS_STORE
-            .get()
-            .expect("MetricsStore not initialized")
+        METRICS_STORE.get().expect("MetricsStore not initialized")
     }
 
     /// Updates the metrics for a specific node, overwriting any existing entry.

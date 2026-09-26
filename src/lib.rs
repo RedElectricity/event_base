@@ -14,13 +14,22 @@ pub use event_base_grpc as grpc;
 #[cfg(feature = "middleware")]
 pub use event_base_middleware as middleware;
 
+pub use event_base_queue::crossfire;
 #[cfg(feature = "memory")]
 pub use event_base_queue::flume;
 pub use event_base_queue::mpmc;
-pub use event_base_queue::crossfire;
 
 #[cfg(feature = "memory")]
 pub use event_base_wal::memory as memory_wal;
 
 #[cfg(feature = "persistent")]
 pub use event_base_wal::persistent;
+
+/// Redis Streams queue backend — [`RedisStreamQueueFactory`](event_base_queue::redis_streams::RedisStreamQueueFactory)
+/// is reachable through this module when the `redis` feature is enabled.
+#[cfg(feature = "redis")]
+pub use event_base_queue::redis_streams;
+
+/// Redis WAL backend — [`RedisWal`](event_base_wal::redis::RedisWal).
+#[cfg(feature = "redis")]
+pub use event_base_wal::redis as redis_wal;

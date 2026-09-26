@@ -89,11 +89,15 @@ pub struct ShutdownAckHandler;
 #[async_trait]
 impl EHandler for ShutdownAckHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let ack = bincode::decode_from_slice::<ShutdownAck, _>(&msg.payload.0, bincode::config::standard());
+        let ack = bincode::decode_from_slice::<ShutdownAck, _>(
+            &msg.payload.0,
+            bincode::config::standard(),
+        );
 
         if let Ok((ack, _)) = ack {
             WorkerRegistry::global()
-                .write().await
+                .write()
+                .await
                 .unregister(&ack.worker_name)
                 .await
                 .unwrap_or_else(|_| {

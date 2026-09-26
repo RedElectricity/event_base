@@ -97,8 +97,7 @@ async fn core_workflow_covers_global_paths() {
     WorkerRegistry::init(Some(wal_handle.clone()))
         .await
         .expect("worker registry should initialize");
-    TopicRouter::init(producer.clone())
-        .expect("topic router should initialize");
+    TopicRouter::init(producer.clone()).expect("topic router should initialize");
 
     eprintln!("stage: router setup");
 
@@ -120,8 +119,16 @@ async fn core_workflow_covers_global_paths() {
         .await
         .expect("worker register should succeed");
 
-    TopicRouter::global().write().await.register_topic("orders").await;
-    TopicRouter::global().write().await.register_topic("orders").await;
+    TopicRouter::global()
+        .write()
+        .await
+        .register_topic("orders")
+        .await;
+    TopicRouter::global()
+        .write()
+        .await
+        .register_topic("orders")
+        .await;
     let topics = TopicRouter::global().read().await.list_topics().await;
     assert_eq!(topics, vec!["orders".to_string()]);
 
@@ -129,7 +136,9 @@ async fn core_workflow_covers_global_paths() {
 
     let standard_msg = message("ignored", b"standard", DeliveryMode::Standard);
     let standard_id = standard_msg.id.clone();
-    TopicRouter::global().read().await
+    TopicRouter::global()
+        .read()
+        .await
         .send("orders", standard_msg, None, None)
         .await
         .expect("standard send should succeed");
@@ -147,13 +156,17 @@ async fn core_workflow_covers_global_paths() {
 
     let try_msg = message("ignored", b"try", DeliveryMode::Standard);
     let try_id = try_msg.id.clone();
-    TopicRouter::global().read().await
+    TopicRouter::global()
+        .read()
+        .await
         .send("orders", try_msg, Some(true), None)
         .await
         .expect("try send should succeed");
     assert_eq!(producer.try_sent.lock().await.len(), 1);
     fake_wal
-        .seed_pending(WalRecord::from_msg(producer.try_sent.lock().await[0].clone()))
+        .seed_pending(WalRecord::from_msg(
+            producer.try_sent.lock().await[0].clone(),
+        ))
         .await;
     wal_state
         .update_state(&try_id, WalRecordState::Complete)
@@ -162,13 +175,17 @@ async fn core_workflow_covers_global_paths() {
 
     let timeout_msg = message("ignored", b"timeout", DeliveryMode::Standard);
     let timeout_id = timeout_msg.id.clone();
-    TopicRouter::global().read().await
+    TopicRouter::global()
+        .read()
+        .await
         .send("orders", timeout_msg, None, Some(Duration::from_millis(2)))
         .await
         .expect("timeout send should succeed");
     assert_eq!(producer.timeout_sent.lock().await.len(), 1);
     fake_wal
-        .seed_pending(WalRecord::from_msg(producer.timeout_sent.lock().await[0].0.clone()))
+        .seed_pending(WalRecord::from_msg(
+            producer.timeout_sent.lock().await[0].0.clone(),
+        ))
         .await;
     wal_state
         .update_state(&timeout_id, WalRecordState::Complete)
@@ -179,12 +196,15 @@ async fn core_workflow_covers_global_paths() {
     let broadcast_id = broadcast_msg.id.clone();
     let try_count_before = producer.try_sent.lock().await.len();
     let expected_broadcast_count = WorkerRegistry::global()
-        .read().await
+        .read()
+        .await
         .get_workers("orders")
         .await
         .expect("topic workers should exist")
         .len();
-    TopicRouter::global().read().await
+    TopicRouter::global()
+        .read()
+        .await
         .send("orders", broadcast_msg, Some(true), None)
         .await
         .expect("broadcast send should succeed");
@@ -224,7 +244,9 @@ async fn core_workflow_covers_global_paths() {
     let past_msg_id = past_msg.id.clone();
     past_msg.deliver_at = Some(SystemTime::now() - Duration::from_secs(1));
     // TopicRouter schedules past-deliver_at messages in the WAL (no ErrorTime check)
-    TopicRouter::global().read().await
+    TopicRouter::global()
+        .read()
+        .await
         .send("orders", past_msg, None, None)
         .await
         .expect("past deliver_at should schedule in WAL, not fail");
@@ -257,7 +279,9 @@ async fn core_workflow_covers_global_paths() {
         .seed_pending(WalRecord::from_msg(ignored.clone()))
         .await;
 
-    let replay_summary = TopicRouter::global().read().await
+    let replay_summary = TopicRouter::global()
+        .read()
+        .await
         .replay(Some(&["orders"]))
         .await
         .expect("replay should succeed");
@@ -285,7 +309,8 @@ async fn core_workflow_covers_global_paths() {
     let audit_event = audit_record("audit-1", "orders", AuditEventType::Enqueued);
     let audit_message = message(
         "_system.audit",
-        &bincode::encode_to_vec(&audit_event, bincode::config::standard()).expect("audit event should serialize"),
+        &bincode::encode_to_vec(&audit_event, bincode::config::standard())
+            .expect("audit event should serialize"),
         DeliveryMode::Standard,
     );
     assert!(matches!(
@@ -300,7 +325,8 @@ async fn core_workflow_covers_global_paths() {
     let metrics = node_metrics(&get_node_name());
     let metrics_message = message(
         "_system.metrics",
-        &bincode::encode_to_vec(&metrics, bincode::config::standard()).expect("metrics should serialize"),
+        &bincode::encode_to_vec(&metrics, bincode::config::standard())
+            .expect("metrics should serialize"),
         DeliveryMode::Standard,
     );
     assert!(matches!(
@@ -308,14 +334,16 @@ async fn core_workflow_covers_global_paths() {
         event_base_core::handler::Ack::Ack
     ));
     let stored_metrics = MetricsStore::global()
-        .read().await
+        .read()
+        .await
         .get_node(&get_node_name())
         .await
         .expect("node metrics should be present");
     assert_eq!(stored_metrics.node_worker_count, 2);
 
     MetricsManager::global()
-        .write().await
+        .write()
+        .await
         .feed_audit(&audit_record("audit-2", "orders", AuditEventType::Retry))
         .await;
     let snapshot = MetricsManager::global().read().await.snapshot().await;
@@ -330,12 +358,15 @@ async fn core_workflow_covers_global_paths() {
     let shutdown_handler = ShutdownAckHandler;
     let shutdown_message = message(
         "_system.shutdown_ack",
-        &bincode::encode_to_vec(&ShutdownAck {
-            worker_name: "retire-me".to_string(),
-            status: ShutdownStatus::Completed,
-            timestamp: SystemTime::now(),
-            error: None,
-        }, bincode::config::standard())
+        &bincode::encode_to_vec(
+            &ShutdownAck {
+                worker_name: "retire-me".to_string(),
+                status: ShutdownStatus::Completed,
+                timestamp: SystemTime::now(),
+                error: None,
+            },
+            bincode::config::standard(),
+        )
         .expect("shutdown ack should serialize"),
         DeliveryMode::Standard,
     );
@@ -343,7 +374,11 @@ async fn core_workflow_covers_global_paths() {
         shutdown_handler.handler(&shutdown_message).await,
         event_base_core::handler::Ack::Ack
     ));
-    let remaining_workers = WorkerRegistry::global().read().await.get_all_workers().await;
+    let remaining_workers = WorkerRegistry::global()
+        .read()
+        .await
+        .get_all_workers()
+        .await;
     assert!(!format!("{:?}", remaining_workers).contains("retire-me"));
 
     eprintln!("stage: shutdown handlers");

@@ -42,19 +42,22 @@ impl Wal for MemoryWal {
         } else {
             let mut counter = self.id_counter.lock().await;
             *counter += 1;
-            records.insert(message_id.to_string(), WalRecord {
-                record_id: *counter,
-                message: event_base_core::message::EMessage::new(
-                    event_base_core::message::MessageTopic(String::new()),
-                    event_base_core::message::MessagePayload(Vec::new()),
-                    event_base_core::message::DeliveryMode::Standard,
-                    None,
-                ),
-                status,
-                last_attempt_at: None,
-                is_dead_letter: false,
-                dead_reason: None,
-            });
+            records.insert(
+                message_id.to_string(),
+                WalRecord {
+                    record_id: *counter,
+                    message: event_base_core::message::EMessage::new(
+                        event_base_core::message::MessageTopic(String::new()),
+                        event_base_core::message::MessagePayload(Vec::new()),
+                        event_base_core::message::DeliveryMode::Standard,
+                        None,
+                    ),
+                    status,
+                    last_attempt_at: None,
+                    is_dead_letter: false,
+                    dead_reason: None,
+                },
+            );
         }
         Ok(())
     }

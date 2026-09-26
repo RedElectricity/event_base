@@ -79,14 +79,19 @@ impl WalClient {
             timestamp: SystemTime::now(),
         };
 
-        let payload = bincode::encode_to_vec(&sync_msg, bincode::config::standard())
-            .map_err(|e| CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(e.to_string())))?;
+        let payload =
+            bincode::encode_to_vec(&sync_msg, bincode::config::standard()).map_err(|e| {
+                CoreError::Serialize(crate::error::serialize::SerializeError::SerializeError(
+                    e.to_string(),
+                ))
+            })?;
 
         let mut msg = self.template.clone();
         msg.payload = MessagePayload(payload);
         msg.id = Uuid::new_v4().to_string();
         TopicRouter::global()
-            .read().await
+            .read()
+            .await
             .send_system(msg, None, None)
             .await?;
         Ok(())

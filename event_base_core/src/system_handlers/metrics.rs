@@ -19,16 +19,22 @@ pub struct MetricsHandler {}
 #[async_trait]
 impl EHandler for MetricsHandler {
     async fn handler(&self, msg: &EMessage) -> Ack {
-        let info: NodeMetrics =
-            match bincode::decode_from_slice::<NodeMetrics, _>(msg.payload.0.as_slice(), bincode::config::standard()) {
-                Ok((msg, _)) => msg,
-                Err(e) => {
-                    eprintln!("[METRICS]Failed to deserialize NodeMetrics: {}", e);
-                    return Ack::Ack;
-                }
-            };
+        let info: NodeMetrics = match bincode::decode_from_slice::<NodeMetrics, _>(
+            msg.payload.0.as_slice(),
+            bincode::config::standard(),
+        ) {
+            Ok((msg, _)) => msg,
+            Err(e) => {
+                eprintln!("[METRICS]Failed to deserialize NodeMetrics: {}", e);
+                return Ack::Ack;
+            }
+        };
 
-        MetricsStore::global().write().await.update(info.clone()).await;
+        MetricsStore::global()
+            .write()
+            .await
+            .update(info.clone())
+            .await;
 
         Ack::Ack
     }

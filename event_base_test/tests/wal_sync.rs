@@ -73,9 +73,11 @@ fn wal_sync_message_serialization() {
         timestamp: SystemTime::now(),
     };
 
-    let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize should succeed");
-    let decoded: WalSyncMessage =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize should succeed").0;
+    let bytes = bincode::encode_to_vec(&msg, bincode::config::standard())
+        .expect("serialize should succeed");
+    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize should succeed")
+        .0;
 
     assert_eq!(decoded.message_id, "msg-1");
     assert_eq!(decoded.topic, "orders");
@@ -98,9 +100,11 @@ fn wal_sync_message_with_error() {
         timestamp: SystemTime::now(),
     };
 
-    let bytes = bincode::encode_to_vec(&msg, bincode::config::standard()).expect("serialize should succeed");
-    let decoded: WalSyncMessage =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("deserialize should succeed").0;
+    let bytes = bincode::encode_to_vec(&msg, bincode::config::standard())
+        .expect("serialize should succeed");
+    let decoded: WalSyncMessage = bincode::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("deserialize should succeed")
+        .0;
 
     assert_eq!(decoded.status, WalRecordState::Failed);
     assert_eq!(decoded.error.as_deref(), Some("max retries exceeded"));

@@ -141,7 +141,14 @@ async fn metrics_and_audit_singletons_lifecycle() {
         Err(CoreError::AlreadyInitialized)
     ));
 
-    assert!(MetricsStore::global().read().await.get_all_nodes().await.is_empty());
+    assert!(
+        MetricsStore::global()
+            .read()
+            .await
+            .get_all_nodes()
+            .await
+            .is_empty()
+    );
 
     let metrics = NodeMetrics {
         node_name: "node-a".to_string(),
@@ -151,14 +158,43 @@ async fn metrics_and_audit_singletons_lifecycle() {
         node_worker_count: 2,
         update_time: SystemTime::now(),
     };
-    MetricsStore::global().write().await.update(metrics.clone()).await;
-    assert_eq!(MetricsStore::global().read().await.get_all_nodes().await.len(), 1);
-    assert_eq!(MetricsStore::global().read().await.get_node("node-a").await.unwrap().node_worker_count, 2);
-    assert!(MetricsStore::global().read().await.get_node("unknown").await.is_none());
+    MetricsStore::global()
+        .write()
+        .await
+        .update(metrics.clone())
+        .await;
+    assert_eq!(
+        MetricsStore::global()
+            .read()
+            .await
+            .get_all_nodes()
+            .await
+            .len(),
+        1
+    );
+    assert_eq!(
+        MetricsStore::global()
+            .read()
+            .await
+            .get_node("node-a")
+            .await
+            .unwrap()
+            .node_worker_count,
+        2
+    );
+    assert!(
+        MetricsStore::global()
+            .read()
+            .await
+            .get_node("unknown")
+            .await
+            .is_none()
+    );
 
     // Overwrite
     MetricsStore::global()
-        .write().await
+        .write()
+        .await
         .update(NodeMetrics {
             node_name: "node-a".to_string(),
             node_type: event_base_core::NodeType::Host,
@@ -168,7 +204,16 @@ async fn metrics_and_audit_singletons_lifecycle() {
             update_time: SystemTime::now(),
         })
         .await;
-    assert_eq!(MetricsStore::global().read().await.get_node("node-a").await.unwrap().node_worker_count, 5);
+    assert_eq!(
+        MetricsStore::global()
+            .read()
+            .await
+            .get_node("node-a")
+            .await
+            .unwrap()
+            .node_worker_count,
+        5
+    );
 
     // ── MetricsManager ──
     MetricsManager::init().expect("MetricsManager init should succeed");
@@ -209,7 +254,8 @@ async fn metrics_and_audit_singletons_lifecycle() {
     // Record entries
     for i in 0..8 {
         AuditManager::global()
-            .write().await
+            .write()
+            .await
             .record(audit_record(
                 &format!("audit-{}", i),
                 "test",
