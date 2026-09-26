@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "event_base"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "event_base_audit",
  "event_base_core",
