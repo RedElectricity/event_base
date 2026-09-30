@@ -116,10 +116,20 @@ pub enum WorkerStatus {
     Working,
 }
 
+/// Hard cap on how many times a **targeted** message (`to_worker` set) may be
+/// requeued between workers/nodes before it is dropped with a warning. Without
+/// a cap, a message aimed at a dead worker would ping‑pong through the queue
+/// forever (targeted miss → requeue → another node claims → requeue …).
+pub const MAX_TARGETED_HOPS: u32 = 64;
+
 impl Worker {
     /// Creates a new worker instance.
     ///
-    /// The worker name is generated automatically from the topic and a UUID.
+    /// The worker name is generated from the topic and a UUID. When a node
+    /// name is set via [`set_node_name`](crate::set_node_name), the name is
+    /// node‑qualified (`{node}@worker-{topic}-{uuid}`) so it is globally
+    /// unique: `to_worker` targeting then round‑trips across nodes via
+    /// claim‑and‑requeue (see [`Worker::start`]’s targeted filter).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         topic: String,
@@ -130,7 +140,11 @@ impl Worker {
         shutdown_check_interval: Duration,
         shutdown_timeout: Option<Duration>,
     ) -> Self {
-        let name = format!("worker-{}-{}", topic, Uuid::new_v4());
+        let base = format!("worker-{}-{}", topic, Uuid::new_v4());
+        let name = match crate::try_get_node_name() {
+            Some(node) => format!("{node}@{base}"),
+            None => base,
+        };
         Self {
             topic,
             name: name.clone(),
@@ -176,10 +190,13 @@ impl Worker {
                     }
                     msg = inbox.receive() => {
                         self.set_local_status(Working).await;
-                        if let Some(msg) = msg
-                            && let Err(e) = self.process_msg(msg).await {
+                        if let Some(msg) = msg {
+                            if self.is_misrouted(&msg) {
+                                self.route_targeted(msg).await;
+                            } else if let Err(e) = self.process_msg(msg).await {
                                 error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process inbox message");
                             }
+                        }
                         self.set_local_status(Idle).await;
                     }
                 }
@@ -196,10 +213,13 @@ impl Worker {
                 }
                 msg = consumer.receive() => {
                     self.set_status(Working).await;
-                    if let Some(msg) = msg
-                        && let Err(e) = self.process_msg(msg).await {
+                    if let Some(msg) = msg {
+                        if self.is_misrouted(&msg) {
+                            self.route_targeted(msg).await;
+                        } else if let Err(e) = self.process_msg(msg).await {
                             error!(worker = %self.name, topic = %self.topic, error = %e, "worker failed to process message");
                         }
+                    }
                     self.set_status(Idle).await;
                 }
             }
@@ -496,6 +516,34 @@ impl Worker {
     /// Returns `true` if the shutdown process has completed.
     pub fn is_shutdown_complete(&self) -> bool {
         self.shutdown_complete.load(Ordering::SeqCst)
+    }
+
+    /// Returns `true` when the message is targeted (`to_worker` set) at a
+    /// worker other than this one.
+    fn is_misrouted(&self, msg: &EMessage) -> bool {
+        match &msg.to_worker {
+            Some(target) => target != &self.name,
+            None => false,
+        }
+    }
+
+    /// Forwards a message addressed to a different worker back onto the topic
+    /// queue so the rightful owner (on this or another node) can claim it.
+    /// Bounded by [`MAX_TARGETED_HOPS`] to prevent infinite ping‑pong when the
+    /// target is gone.
+    async fn route_targeted(&self, msg: EMessage) {
+        if msg.attempts >= MAX_TARGETED_HOPS {
+            warn!(
+                worker = %self.name,
+                target = %msg.to_worker.as_deref().unwrap_or("?"),
+                message_id = %msg.id,
+                "targeted message exceeded max relay hops; dropping"
+            );
+            return;
+        }
+        let mut msg = msg;
+        msg.attempts += 1;
+        let _ = self.producer.send(msg).await;
     }
 
     async fn set_status(&self, status: WorkerStatus) {

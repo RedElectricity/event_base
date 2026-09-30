@@ -218,8 +218,8 @@ async fn router() -> tokio::sync::RwLockReadGuard<'static, ConsumerRouter> {
 async fn worker_and_router_and_shutdown_integration() {
     // ──────── Setup globals ────────
     info!("=== STAGE: setup ===");
-    let _ = set_node_name("integration-node".to_string());
-    let _ = set_node_type(NodeType::Host);
+    set_node_name("integration-node".to_string());
+    set_node_type(NodeType::Host);
 
     info!("=== STAGE: WAL + WorkerRegistry + TopicRouter ===");
     let fake_wal = RecordingWal::new();
@@ -278,7 +278,12 @@ async fn worker_and_router_and_shutdown_integration() {
         )
         .await
         .expect("create_worker should succeed");
-    assert!(worker_name.starts_with("worker-test-topic-"));
+    // Node name is set for this process → worker names are node-qualified so
+    // they stay globally unique (cross‑node to_worker routing keys off them).
+    assert!(
+        worker_name.starts_with("integration-node@worker-test-topic-"),
+        "expected node-qualified worker name, got {worker_name}"
+    );
 
     // ──────── ConsumerRouter: get_worker, get_workers, get_all_workers ────────
     // NOTE: guards here are statement-scoped via router(); a read guard held
@@ -496,7 +501,7 @@ async fn worker_and_router_and_shutdown_integration() {
 
     // ──────── TopicRouter: broadcast with error on Worker node ────────
     // Set node to Worker temporarily
-    let _ = set_node_type(NodeType::Worker);
+    set_node_type(NodeType::Worker);
     let broadcast_msg = message("test-topic", b"broadcast", DeliveryMode::Broadcast);
     let result = TopicRouter::global()
         .read()
@@ -505,7 +510,7 @@ async fn worker_and_router_and_shutdown_integration() {
         .await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("Unsupported"));
-    let _ = set_node_type(NodeType::Host);
+    set_node_type(NodeType::Host);
 
     // ──────── WAL sync function coverage ────────
     // WalClient methods are called by the Worker; we can verify the

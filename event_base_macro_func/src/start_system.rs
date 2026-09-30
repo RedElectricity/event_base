@@ -118,7 +118,12 @@ pub async fn start_system_impl(
 
     if node_type == Host {
         tokio::spawn(TopicRouter::run_delay_scheduler());
+        // Host‑only: evict registry entries whose heartbeats lapsed.
+        tokio::spawn(event_base_core::system_handlers::worker::run_registry_cleanup_loop());
     }
+
+    // All roles: keep the Host's WorkerRegistry fresh for every live worker.
+    tokio::spawn(event_base_core::system_handlers::worker::run_worker_heartbeat_loop());
 
     Ok(shutdown_tx)
 }

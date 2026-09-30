@@ -151,8 +151,8 @@ async fn g_count(p: &RecordingProducer, t: &str) -> usize {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn worker_process_msg_and_wal_sync_coverage() {
-    let _ = set_node_name("cov-node".to_string());
-    let _ = set_node_type(NodeType::Host);
+    set_node_name("cov-node".to_string());
+    set_node_type(NodeType::Host);
     let fake_wal = RecordingWal::new();
     let wal_handle: Arc<RwLock<Box<dyn Wal>>> = Arc::new(RwLock::new(Box::new(fake_wal.clone())));
     let _ = WorkerRegistry::init(Some(wal_handle.clone())).await;
@@ -196,7 +196,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                 &x.payload.0,
                 bincode::config::standard(),
             )
-            .map_or(false, |(s, _)| s.message_id == mid)
+            .is_ok_and(|(s, _)| s.message_id == mid)
         })
         .collect();
     assert_eq!(ours.len(), 2);
@@ -249,9 +249,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                     &x.payload.0,
                     bincode::config::standard(),
                 )
-                .map_or(false, |(s, _)| {
-                    s.status == WalRecordState::Failed && s.message_id == mid
-                })
+                .is_ok_and(|(s, _)| s.status == WalRecordState::Failed && s.message_id == mid)
             })
     );
     drop(ms);
@@ -373,9 +371,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     let wms = g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await;
     assert!(wms.iter().skip(bw).any(|x| {
         bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
-            .map_or(false, |(s, _)| {
-                s.status == WalRecordState::Complete && s.message_id == mid
-            })
+            .is_ok_and(|(s, _)| s.status == WalRecordState::Complete && s.message_id == mid)
     }));
     ConsumerRouter::global()
         .write()
@@ -405,9 +401,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     let wms = g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await;
     assert!(wms.iter().skip(bwl).any(|x| {
         bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
-            .map_or(false, |(s, _)| {
-                s.status == WalRecordState::Pending && s.message_id == mid
-            })
+            .is_ok_and(|(s, _)| s.status == WalRecordState::Pending && s.message_id == mid)
     }));
     ConsumerRouter::global()
         .write()
@@ -504,7 +498,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         .expect("10");
     assert!(g_topic(&gp, SYSTEM_TOPIC_WAL_SYNC).await.iter().any(|x| {
         bincode::decode_from_slice::<WalSyncMessage, _>(&x.payload.0, bincode::config::standard())
-            .map_or(false, |(s, _)| s.status == WalRecordState::Complete)
+            .is_ok_and(|(s, _)| s.status == WalRecordState::Complete)
     }));
     ConsumerRouter::global()
         .write()
@@ -648,9 +642,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                     &x.payload.0,
                     bincode::config::standard(),
                 )
-                .map_or(false, |(s, _)| {
-                    s.status == WalRecordState::Pending && s.message_id == mid
-                })
+                .is_ok_and(|(s, _)| s.status == WalRecordState::Pending && s.message_id == mid)
             })
     );
     ConsumerRouter::global()
@@ -685,9 +677,7 @@ async fn worker_process_msg_and_wal_sync_coverage() {
                     &x.payload.0,
                     bincode::config::standard(),
                 )
-                .map_or(false, |(s, _)| {
-                    s.status == WalRecordState::Complete && s.message_id == mid
-                })
+                .is_ok_and(|(s, _)| s.status == WalRecordState::Complete && s.message_id == mid)
             })
     );
     ConsumerRouter::global()

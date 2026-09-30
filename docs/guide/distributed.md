@@ -43,24 +43,25 @@ Multiple workers can run simultaneously, potentially on different machines.
 
 System topics (prefixed with `_system.`) are reserved for internal communication:
 
-| Topic | Direction | Purpose |
-|---|---|---|
-| `_system.audit` | Worker → Host | Audit log events |
-| `_system.trace` | Worker → Host | Distributed tracing spans |
-| `_system.shutdown` | Host → Worker | Shutdown commands |
-| `_system.shutdown_ack` | Worker → Host | Shutdown acknowledgments |
-| `_system.wal_sync` | Worker → Host | WAL state sync (Processing → Complete) |
-| `_system.worker_discovery` | Worker → Host | Worker registration |
-| `_system.worker_heartbeat` | Worker → Host | Periodic heartbeat |
-| `_system.metrics` | Worker → Host | Node metrics |
-| `_system.topic_discovery` | Worker → Host | Topic list sync |
-| `_system.topic_sync` | Host → Worker | Topic configuration sync |
+| Topic | Direction | Purpose | Delivery on shared backends |
+|---|---|---|---|
+| `_system.audit` | Worker → Host | Audit log events | competing (Host-only consumer) |
+| `_system.trace` | Worker → Host | Distributed tracing spans | competing (Host-only consumer) |
+| `_system.shutdown` | Host → every node | Shutdown commands | **fan-out** (per-node group) |
+| `_system.shutdown_ack` | Worker → Host | Shutdown acknowledgments | competing (Host-only consumer) |
+| `_system.wal_sync` | Worker → Host | WAL state sync (Processing → Complete) | competing (Host-only consumer) |
+| `_system.worker_discovery` | every node → Host | Worker registration | competing (Host-only consumer) |
+| `_system.worker_heartbeat` | every node → Host | Periodic heartbeat | competing (Host-only consumer) |
+| `_system.metrics` | every node → everywhere | Node metrics | **fan-out** (each node stores all) |
+| `_system.topic_discovery` | Worker → Host | Topic list sync | competing (Host-only consumer) |
+| `_system.topic_sync` | Host → Worker | Topic configuration sync | **fan-out** (per-node group) |
 
 ---
 
 ## Worker discovery
 
-When a Worker node starts, it sends a `WorkerDiscoveryMessage` to the `_system.worker_discovery` topic:
+Every worker created through `ConsumerRouter::create_worker` publishes a
+`WorkerDiscoveryMessage` to `_system.worker_discovery`:
 
 ```rust
 pub struct WorkerDiscoveryMessage {
@@ -74,11 +75,17 @@ The Host's `WorkerDiscoveryHandler` processes this message:
 
 1. Records the worker in the `WorkerRegistry`
 2. Persists the registry to the WAL
-3. The worker is now addressable for message delivery
+3. The worker is now addressable: broadcast fan-out, gRPC `list_workers` and stale cleanup all read from this registry
+
+Announcements use `try_send` (worker creation never blocks on coordination chatter); every `DISCOVERY_REANNOUNCE_EVERY` heartbeat cycles the heartbeat loop re-announces any local worker missing from the registry, so a dropped announcement self-heals. Workers on `_system.*` topics are process plumbing, not business consumers, and are deliberately **not** announced; ephemeral one-shot workers never are either.
+
+### Node identity in worker names
+
+When `set_node_name` has been called, worker names are node-qualified: `{node}@worker-{topic}-{uuid}`. Qualified names are globally unique, which is what makes cross-node `to_worker` targeting meaningful — see [Targeted delivery](#targeted-delivery).
 
 ### Heartbeats
 
-Workers periodically send heartbeats to the `_system.worker_heartbeat` topic:
+`start_system!` spawns a heartbeat loop on **every** node role. Each pass publishes one `WorkerHeartbeatMessage` per live (non-system) local worker, at `WORKER_HEARTBEAT_INTERVAL` (15 s):
 
 ```rust
 pub struct WorkerHeartbeatMessage {
@@ -87,12 +94,7 @@ pub struct WorkerHeartbeatMessage {
 }
 ```
 
-The Host updates the worker's `last_heartbeat` timestamp. Stale workers (heartbeat too old) can be detected and cleaned up.
-
-```rust
-// WorkerRegistry: cleanup stale workers
-pub async fn cleanup_stale_workers(&self, heartbeat_timeout: Duration) -> Result<Vec<String>, CoreError>;
-```
+The Host refreshes each worker's `last_heartbeat`. A Host-only cleanup task sweeps the registry every `WORKER_CLEANUP_INTERVAL` (30 s) and evicts entries whose heartbeat is older than `WORKER_STALE_TIMEOUT` (90 s ≈ 6 missed beats), so workers on a dead node stop receiving targeted traffic. The constants live in `event_base_core::system_handlers::worker`, together with a manually-drivable `heartbeat_once(reannounce: bool)` used by tests.
 
 ---
 
@@ -186,12 +188,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Every topic becomes a Redis stream (`{prefix}:{topic}`) consumed through one
-shared consumer group, so workers on different machines compete for messages
-instead of each getting their own copy. Use a node-unique WAL `prefix`
-(`RedisWal::with_prefix`) unless you deliberately want one shared write-ahead
-log across nodes. Kafka and friends remain possible via a custom
+Every topic becomes a Redis stream (`{prefix}:{topic}`). Business topics share
+one consumer group, so workers on different machines **compete** for messages;
+the fan-out coordination topics in the table above get a per-node group
+(`{group}@{node}`, identified by `set_node_name` or
+`RedisQueueConfig::with_node`), so **every** node receives its own copy of
+shutdown commands, topic sync and metrics. Fan-out groups are created at `$`
+— a node that joins later never replays stale control traffic; all other
+groups start at `0`, preserving pre-boot buffered messages. `unregistered
+_system.*` topics are still published (their consumers live on other nodes),
+so set `RedisQueueConfig::maxlen` on long-lived deployments. Use a node-unique
+WAL `prefix` (`RedisWal::with_prefix`) unless you deliberately want one shared
+write-ahead log across nodes. Kafka and friends remain possible via a custom
 `QueueFactory`/`Wal` implementation.
+
+---
+
+## Targeted delivery
+
+Messages may carry `to_worker = Some(name)` (set explicitly, or stamped by the
+broadcast fan-out from the registry). On shared backends each topic has one
+dispatcher per node; its rules are:
+
+* the target matches a local worker (qualified name, or bare name resolving to
+  `{this-node}@{name}`) → deliver to that worker's inbox;
+* the target names a worker that is **not** local (another node's, or a dead
+  one) → ack, bump `attempts`, and re-inject on the topic stream so the
+  owning node gets a fresh claim. This claim-and-requeue is the cross-node
+  router for targeted traffic; after `MAX_TARGETED_HOPS` (64) relays the
+  message is dropped with a warning, so a dead target can never wedge the
+  queue;
+* no target → round-robin across the node's workers (the selected name is
+  stamped into `to_worker`).
+
+The practical rule: **address workers by what `list_workers` / the
+`WorkerRegistry` reports** (node-qualified names), not by reconstructed
+strings.
+
+---
+
+## Securing the control plane
+
+The gRPC surface (`event_base_grpc::serve`) exposes topic/worker/metrics state
+and — critically — the `shutdown` RPC. Pick by exposure:
+
+```rust
+// loopback / single machine only — NO authentication:
+event_base_grpc::serve(addr).await?;
+
+// require `authorization: Bearer <token>` on every RPC (constant-time check):
+event_base_grpc::serve_with_token(addr, "sekret").await?;
+
+// TLS (cargo feature `tls` on event_base_grpc, or `grpc-tls` on the umbrella
+// crate), optionally combined with the token inside the encrypted channel:
+event_base_grpc::serve_tls(addr, cert_pem, key_pem, Some("sekret".into())).await?;
+```
+
+`serve_with_token`/`serve_tls` return `tonic::transport::Error` (a `Send`
+error) so they can be `tokio::spawn`ed directly; `serve` keeps its historical
+`Box<dyn Error>` signature.
 
 ---
 

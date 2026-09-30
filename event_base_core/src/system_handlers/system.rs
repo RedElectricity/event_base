@@ -131,6 +131,13 @@ impl SystemHandlerBuilder {
                 .register(SYSTEM_TOPIC_METRICS, Arc::new(MetricsHandler {}))
                 .await?;
 
+            // Registered alone is not consumed: spawn the workers so shutdown
+            // commands / topic sync / metrics actually reach this node (the
+            // per‑topic queue has no other reader on a Worker role).
+            spawn_system_workers(&router, SYSTEM_TOPIC_SHUTDOWN, SYSTEM_WORKER_COUNT).await?;
+            spawn_system_workers(&router, SYSTEM_TOPIC_TOPIC_SYNC, SYSTEM_WORKER_COUNT).await?;
+            spawn_system_workers(&router, SYSTEM_TOPIC_METRICS, SYSTEM_WORKER_COUNT).await?;
+
             tokio::spawn(async move {
                 let collector = NodeCollector;
                 let _ = collector.start().await;

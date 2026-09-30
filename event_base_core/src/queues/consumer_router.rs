@@ -5,19 +5,23 @@
 //! the message to that worker's internal producer. It also manages worker
 //! lifecycles (creation, registration, deletion).
 
+use crate::constant::SYSTEM_TOPIC_WORKER_DISCOVERY;
 use crate::error::CoreError;
 use crate::error::topic::TopicError;
 use crate::handler::EHandler;
-use crate::message::EMessage;
+use crate::message::DeliveryMode::Standard;
+use crate::message::{EMessage, MessagePayload, MessageTopic};
 use crate::middleware::Pipeline;
 use crate::queues::consumer_factory::ConsumerFactory;
 use crate::queues::factory::QueueFactory;
 use crate::queues::{EConsumer, EProducer};
-use crate::worker::{LocalInboxConsumer, Worker};
+use crate::topic::TopicRouter;
+use crate::worker::{LocalInboxConsumer, MAX_TARGETED_HOPS, Worker};
+use crate::worker_registry::WorkerDiscoveryMessage;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::error;
@@ -154,7 +158,15 @@ impl ConsumerRouter {
 
                 let worker = if let Some(target) = &msg.to_worker {
                     let workers = self.worker_index.read().await;
-                    workers.get(target).map(|(w, _)| w.clone())
+                    workers
+                        .get(target.as_str())
+                        // Bare (unqualified) target resolves against this
+                        // node's workers; qualified targets only hit exactly.
+                        .or_else(|| {
+                            crate::try_get_node_name()
+                                .and_then(|node| workers.get(&format!("{node}@{target}")))
+                        })
+                        .map(|(w, _)| w.clone())
                 } else {
                     self.select_local_idle_worker(&msg.topic.0).await
                 };
@@ -167,6 +179,44 @@ impl ConsumerRouter {
                             tracing::error!("Fail to dispatch message:{}", e);
                         }
                     },
+                    None if msg.to_worker.is_some() => {
+                        // Targeted at a worker that is not local: relay it
+                        // back onto the topic queue so the owning node's
+                        // workers get another claim. Bounded by hops count to
+                        // avoid a ping‑pong loop against a dead target.
+                        if msg.attempts >= MAX_TARGETED_HOPS {
+                            tracing::warn!(
+                                target = %msg.to_worker.as_deref().unwrap_or("?"),
+                                message_id = %msg.id,
+                                "targeted message exceeded max relay hops; dropping"
+                            );
+                            to_ack.push(claim_id);
+                        } else {
+                            let relay = {
+                                let mut m = msg.clone();
+                                m.attempts += 1;
+                                m
+                            };
+                            let topic_producer = self
+                                .local_topics
+                                .read()
+                                .await
+                                .get(&relay.topic.0)
+                                .map(|e| e.producer.clone());
+                            match topic_producer {
+                                Some(p) => match p.send(relay).await {
+                                    Ok(_) => to_ack.push(claim_id),
+                                    Err(e) => {
+                                        to_nack.push(claim_id);
+                                        tracing::error!("Failed to relay targeted message: {e}");
+                                    }
+                                },
+                                // No local producer for the topic: plain
+                                // nack re‑injects the unchanged copy.
+                                None => to_nack.push(claim_id),
+                            }
+                        }
+                    }
                     None => {
                         // ── Dynamic scaling: spawn an ephemeral one‑shot worker ──
                         let topic = msg.topic.0.clone();
@@ -222,7 +272,25 @@ impl ConsumerRouter {
         Ok(())
     }
 
-    fn spawn_topic_dispatcher(&self, topic: String, mut consumer: Box<dyn EConsumer>) {
+    /// Per‑topic dispatch loop — the sole reader of a topic's queue while any
+    /// of this node's workers is alive (workers sit on their inboxes).
+    ///
+    /// Targeting rules (this is what makes `to_worker` meaningful on shared
+    /// backends — the loop must **honour** a pre‑set target, not overwrite it):
+    /// * `to_worker` matches a local worker (qualified, or bare resolving to
+    ///   this node's `{node}@{target}` form) → deliver to that inbox.
+    /// * `to_worker` names a worker that is not local → this is another node's
+    ///   message (or a dead target): ack, bump `attempts`, and re‑inject it on
+    ///   the topic queue so the owning node gets a fresh claim. Bounded by
+    ///   [`MAX_TARGETED_HOPS`] to terminate relay loops against dead workers.
+    /// * no target → round‑robin among local workers, stamping the chosen
+    ///   name so the worker's own filter passes it through.
+    fn spawn_topic_dispatcher(
+        &self,
+        topic: String,
+        mut consumer: Box<dyn EConsumer>,
+        producer: Arc<dyn EProducer>,
+    ) {
         let dispatch_workers = self.dispatch_workers.clone();
         let local_inboxes = self.local_inboxes.clone();
         let dispatch_generation = self.dispatch_generation.clone();
@@ -230,12 +298,18 @@ impl ConsumerRouter {
             let mut cursor: usize = 0;
             let mut seen_generation = u64::MAX;
             let mut cached_workers: Vec<(String, mpsc::Sender<EMessage>)> = Vec::new();
+            let node = crate::try_get_node_name();
 
             loop {
-                let Some(mut msg) = consumer.receive().await else {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                    continue;
+                let claimed = match consumer.claim().await {
+                    Ok(Some(c)) => c,
+                    Ok(None) | Err(_) => {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        continue;
+                    }
                 };
+                let mut msg = claimed.message;
+                let claim_id = claimed.claim_id;
 
                 let current_generation = dispatch_generation.load(Ordering::Acquire);
                 if current_generation != seen_generation || cached_workers.is_empty() {
@@ -255,17 +329,66 @@ impl ConsumerRouter {
                 }
 
                 if cached_workers.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    // Nothing to deliver to yet: requeue so another node (or a
+                    // worker started shortly) can take it, at a coarse cadence
+                    // to keep this off the hot loop.
+                    let _ = consumer.nack(&claim_id).await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
 
-                let index = cursor % cached_workers.len();
-                cursor = cursor.wrapping_add(1);
-                let (target, inbox) = cached_workers[index].clone();
-                msg.to_worker = Some(target.clone());
-                if let Err(e) = inbox.try_send(msg) {
-                    tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
-                    seen_generation = u64::MAX;
+                // Resolve an explicit target against the local worker set.
+                let local_match: Option<usize> = msg.to_worker.as_ref().and_then(|target| {
+                    cached_workers.iter().position(|(name, _)| {
+                        name == target
+                            || node
+                                .as_ref()
+                                .is_some_and(|n| name == &format!("{n}@{target}"))
+                    })
+                });
+
+                match local_match {
+                    Some(index) => {
+                        let (target, inbox) = cached_workers[index].clone();
+                        msg.to_worker = Some(target.clone());
+                        let _ = consumer.ack(&claim_id).await;
+                        if let Err(e) = inbox.try_send(msg) {
+                            tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
+                            seen_generation = u64::MAX;
+                        }
+                    }
+                    None if msg.to_worker.is_some() => {
+                        let target = msg.to_worker.clone().unwrap_or_default();
+                        if msg.attempts >= MAX_TARGETED_HOPS {
+                            tracing::warn!(
+                                topic = %topic,
+                                target = %target,
+                                message_id = %msg.id,
+                                "targeted message exceeded max relay hops; dropping"
+                            );
+                            let _ = consumer.ack(&claim_id).await;
+                            continue;
+                        }
+                        msg.attempts += 1;
+                        // Ack‑then‑reinject: a "nack with mutation" that keeps
+                        // the hop counter honest across nodes.
+                        let _ = consumer.ack(&claim_id).await;
+                        if let Err(e) = producer.send(msg).await {
+                            tracing::warn!(topic = %topic, target = %target, error = %e, "failed to relay targeted message");
+                        }
+                    }
+                    None => {
+                        // Untargeted: round‑robin, stamping the selection.
+                        let index = cursor % cached_workers.len();
+                        cursor = cursor.wrapping_add(1);
+                        let (target, inbox) = cached_workers[index].clone();
+                        msg.to_worker = Some(target.clone());
+                        let _ = consumer.ack(&claim_id).await;
+                        if let Err(e) = inbox.try_send(msg) {
+                            tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
+                            seen_generation = u64::MAX;
+                        }
+                    }
                 }
             }
         });
@@ -402,7 +525,7 @@ impl ConsumerRouter {
         };
         if should_start_dispatcher {
             let consumer = consumer_factory.create_consumer();
-            self.spawn_topic_dispatcher(topic.to_string(), consumer);
+            self.spawn_topic_dispatcher(topic.to_string(), consumer, producer.clone());
         }
 
         let worker_handle = worker.clone();
@@ -413,7 +536,54 @@ impl ConsumerRouter {
 
         self.register_worker(topic, worker.clone(), handle).await?;
 
+        self.announce_worker(&worker).await;
+
         Ok(worker.name.clone())
+    }
+
+    /// Publishes a `_system.worker_discovery` announcement so the Host's
+    /// [`WorkerRegistry`](crate::worker_registry::WorkerRegistry) learns about
+    /// a newly created local worker. This is what populates the registry that
+    /// broadcast fan‑out, gRPC `list_workers` and stale cleanup depend on.
+    ///
+    /// Fire‑and‑forget: failures are logged, never propagate — worker creation
+    /// must not fail because coordination chatter could not be sent. Ephemeral
+    /// (one‑shot) workers are deliberately **not** announced: they are not
+    /// addressable and vanish after one message.
+    async fn announce_worker(&self, worker: &Worker) {
+        // System workers are process‑local plumbing: they are reached through
+        // the coordination plane itself (per‑node fan‑out groups on shared
+        // backends), never through the Host's WorkerRegistry/broadcast path.
+        // Announcing them would pollute the registry with hundreds of ghost
+        // entries on every boot.
+        if worker.topic.starts_with("_system.") {
+            return;
+        }
+        let Some(router) = TopicRouter::try_global() else {
+            return; // unit tests construct workers without a booted system
+        };
+        let discovery = WorkerDiscoveryMessage {
+            worker_name: worker.name.clone(),
+            topic: worker.topic.clone(),
+            started_at: SystemTime::now(),
+        };
+        let mut msg = EMessage::new(
+            MessageTopic(SYSTEM_TOPIC_WORKER_DISCOVERY.to_string()),
+            MessagePayload(
+                bincode::encode_to_vec(&discovery, bincode::config::standard()).unwrap_or_default(),
+            ),
+            Standard,
+            None,
+        );
+        // `source` carries the emitting node id — the wire format stays at its
+        // published shape (no struct change needed for node identity).
+        msg.metadata.source = crate::try_get_node_name();
+        // try_send, never blocking: worker creation must not stall on a full
+        // coordination queue. The heartbeat loop periodically re‑announces
+        // discovery, so a dropped announcement self‑heals.
+        if let Err(e) = router.read().await.send_system(msg, Some(true), None).await {
+            tracing::warn!(worker = %worker.name, error = %e, "failed to announce worker");
+        }
     }
 
     /// Creates an **ephemeral one‑shot worker** for the given topic.

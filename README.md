@@ -21,13 +21,13 @@
 | **Persistence** | WAL | Write-ahead log with crash recovery — `MemoryWal`, `PersistentWal`, and `RedisWal` (feature `redis`) |
 | **Resilience** | Dead Letter Queue | Automatic DLQ after max retries or explicit `Ack::Dead` |
 | **Resilience** | Backpressure | `try_send` (non-blocking) and `send_timeout` |
-| **Distributed** | Host/Worker | Node roles with discovery (`_system.worker_discovery`) and topic sync; share queues across processes with the Redis backend (feature `redis`) |
+| **Distributed** | Host/Worker | Node roles with worker discovery (`_system.worker_discovery`), heartbeats + stale eviction, topic sync, and node-qualified worker names; share queues across processes with the Redis backend (feature `redis`) — competing consumers for business topics, per-node fan-out groups for coordination |
 | **Shutdown** | 7 strategies | TwoStage, Force, Timeout, Graceful, StateBasedIdle, Batched, Timeout |
 | **Observability** | Audit | Built-in audit logging (`_system.audit`) with ring buffer and custom writers |
 | **Observability** | Tracing | Distributed tracing via `tracing` crate + `TraceLayer` |
 | **Observability** | Metrics | Per-node and system-level metrics |
 | **Middleware** | Composable | `impl Middleware` — logger, metrics, auth, or custom |
-| **Management** | gRPC API | Query node status, list workers, trigger shutdown, stream metrics (optional) |
+| **Management** | gRPC API | Query node status, list workers, trigger shutdown, stream metrics (optional) — `serve_with_token` / `serve_tls` gate the control plane |
 
 ---
 

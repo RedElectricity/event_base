@@ -254,12 +254,22 @@ async fn redis_routing_producer_honours_registration() {
         return;
     };
 
-    // Unknown _system.* topics are dropped silently, like the memory backend.
+    // Unknown _system.* topics are **published** (they must be able to reach
+    // a consumer registered on another node — e.g. worker discovery from a
+    // Worker to the Host). Attaching a consumer later still sees them:
+    // non‑fanout groups are created at id `0`.
     let global = f.create_global_producer().expect("global producer");
     global
-        .send(message("_system.unseen", b"gone"))
+        .send(message("_system.unseen", b"cross node"))
         .await
         .expect("unknown system topics must not error");
+    let (_, unseen_factory) = f.create_queue("_system.unseen").expect("create_queue");
+    let mut unseen = unseen_factory.create_consumer();
+    let got = tokio::time::timeout(Duration::from_secs(5), unseen.receive())
+        .await
+        .expect("system topics are delivered to late groups")
+        .expect("decodes");
+    assert_eq!(got.payload.0, b"cross node");
 
     // A locally registered topic routes to its stream…
     let (topic_producer, consumer_factory) = f.create_queue("orders").expect("create_queue");

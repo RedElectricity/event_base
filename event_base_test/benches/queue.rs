@@ -16,7 +16,6 @@ use event_base_core::audit::AuditManager;
 use event_base_core::handler::{Ack, EHandler};
 use event_base_core::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
 use event_base_core::middleware::{Middleware, Next, Pipeline};
-use event_base_core::queues::consumer_factory::ConsumerFactory;
 use event_base_core::queues::consumer_router::ConsumerRouter;
 use event_base_core::queues::factory::QueueFactory;
 use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
@@ -30,7 +29,6 @@ use event_base_test::support::{RecordingProducer, RecordingWal};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use tokio::sync::Mutex;
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -79,43 +77,6 @@ impl EConsumer for NoopConsumer {
     }
 }
 
-struct NoopCF;
-impl ConsumerFactory for NoopCF {
-    fn create_consumer(&self) -> Box<dyn EConsumer> {
-        Box::new(NoopConsumer)
-    }
-    fn clone_factory(&self) -> Arc<dyn ConsumerFactory> {
-        Arc::new(NoopCF)
-    }
-}
-
-struct NoopQF {
-    p: Arc<dyn EProducer>,
-}
-#[async_trait]
-impl QueueFactory for NoopQF {
-    fn create_queue(
-        &self,
-        _: &str,
-    ) -> Result<(Arc<dyn EProducer>, Arc<dyn ConsumerFactory>), event_base_core::error::CoreError>
-    {
-        Ok((self.p.clone(), Arc::new(NoopCF)))
-    }
-    fn create_global_producer(
-        &self,
-    ) -> Result<Arc<dyn EProducer>, event_base_core::error::CoreError> {
-        Ok(self.p.clone())
-    }
-    fn create_main_consumer(
-        &self,
-    ) -> Result<Arc<Mutex<dyn EConsumer>>, event_base_core::error::CoreError> {
-        Ok(Arc::new(Mutex::new(NoopConsumer)))
-    }
-    fn name(&self) -> &'static str {
-        "bench"
-    }
-}
-
 // ── Lock-free producer for benchmark (drops messages to avoid Mutex contention) ──
 
 struct BenchProducer;
@@ -143,8 +104,8 @@ static BENCH_PRODUCER: std::sync::OnceLock<std::sync::RwLock<Arc<dyn EProducer>>
 
 fn system_init() {
     SYSTEM_INIT.call_once(|| {
-        let _ = set_node_name("bench-node".to_string());
-        let _ = set_node_type(NodeType::Host);
+        set_node_name("bench-node".to_string());
+        set_node_type(NodeType::Host);
 
         let fake_wal = RecordingWal::new();
         let wal: Arc<tokio::sync::RwLock<Box<dyn Wal>>> =
@@ -630,7 +591,6 @@ macro_rules! bench_full_pipeline_backend_one {
         let all_msgs = pre_create(total as u64);
         let pipeline = Arc::new(Pipeline::new(Box::new(AckHandler)));
 
-        let all_msgs = all_msgs; // move out of macro capture
         $group.bench_function(BenchmarkId::new($label, total), |b| {
             b.iter_custom(|iters| {
                 let pipeline = pipeline.clone();

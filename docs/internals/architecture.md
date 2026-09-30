@@ -190,6 +190,17 @@ event_base/                     # Umbrella crate — re-exports all public APIs
      │◄──── topic_discovery ─────────┤  Worker's topic list
 ```
 
+Producer wiring (as of the coordination-plane completion work): `worker_discovery` is
+emitted by `ConsumerRouter::create_worker` (business workers only — `_system.*` and
+ephemeral workers are excluded) with `try_send`, and re-announced by the heartbeat loop
+when a worker goes missing from the registry; `worker_heartbeat` is emitted by a
+per-node loop spawned from `start_system!` on all roles; the Host additionally runs a
+stale sweep. On the Redis backend, `_system.shutdown` / `_system.topic_sync` /
+`_system.metrics` use **per-node consumer groups** (fan-out, started at `$`), while all
+other topics share one competing group — and `_system.*` topics are published even when
+the emitting node has no local consumer, since the reader lives elsewhere. See
+[docs/guide/distributed.md](../guide/distributed.md).
+
 ---
 
 ---
@@ -295,7 +306,7 @@ The umbrella crate (`event_base`) uses feature flags to conditionally include su
 ```toml
 [features]
 default = ["memory", "macro"]
-full = ["gRPC", "middleware", "macro", "memory", "persistent", "audit"]
+full = ["gRPC", "middleware", "macro", "memory", "persistent", "audit", "redis"]
 
 gRPC = []         # Includes event_base_grpc
 middleware = []   # Includes event_base_middleware
@@ -303,6 +314,8 @@ audit = []        # Includes event_base_audit
 memory = []       # Includes event_base_wal::memory + event_base_queue::flume
 persistent = []   # Includes event_base_wal::persistent
 macro = []        # Includes event_base_macro_attr + event_base_macro_func
+redis = ["event_base_queue/redis", "event_base_wal/redis"]          # Redis Streams queue + Redis WAL
+grpc-tls = ["gRPC", "event_base_grpc/tls"]                           # rustls server TLS for serve_tls
 ```
 
 ---

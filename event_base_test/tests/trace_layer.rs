@@ -67,7 +67,7 @@ async fn trace_layer_captures_multiple_levels() {
     let try_sent = producer.try_sent.lock().await;
     // Should have at least the error event (produced via on_event)
     assert!(
-        try_sent.len() >= 1,
+        !try_sent.is_empty(),
         "expected trace events, got {}",
         try_sent.len()
     );

@@ -62,6 +62,15 @@ impl TopicRouter {
         TOPIC_ROUTER.get().expect("TopicRouter not initialized")
     }
 
+    /// Returns the global topic router if it has been initialized, else `None`.
+    ///
+    /// Used by infrastructure-level senders (worker discovery announcements)
+    /// that must degrade gracefully in unit tests which construct routers or
+    /// workers without booting the full system.
+    pub fn try_global() -> Option<&'static RwLock<TopicRouter>> {
+        TOPIC_ROUTER.get()
+    }
+
     /// Replays pending messages from the WAL, optionally filtering by topics.
     ///
     /// Messages with a future `deliver_at` are re-scheduled; others are sent

@@ -17,14 +17,22 @@
 //! * The global producer does **not** error on unknown topics (a Redis stream
 //!   is created implicitly by `XADD`). This is intentional: in a distributed
 //!   setup a node publishes to topics whose queue is only registered on other
-//!   nodes. Unregistered `_system.*` topics are still silently dropped, exactly
-//!   like [`MemoryQueueFactory`](crate::crossfire::MemoryQueueFactory).
-//! * Consumer groups are created with id `0`, so messages sent before the first
-//!   consumer attaches are not lost (bounded‑channel buffer parity).
+//!   nodes — including coordination‑plane `_system.*` topics whose consumer
+//!   lives on a *different* node (e.g. worker discovery from a Worker node to
+//!   the Host). Consider setting [`maxlen`](RedisQueueConfig::maxlen) so
+//!   unconsumed system streams stay bounded.
+//! * **Delivery modes per topic class.** Business topics share one consumer
+//!   group (competing consumers → load balancing). Coordination topics that
+//!   *every* node must see (`_system.shutdown`, `_system.topic_sync`,
+//!   `_system.metrics`) get a **per‑node group** (`{group}@{node}`), turning
+//!   the stream into a fan‑out channel; their groups are created at `$` so a
+//!   joining node never replays stale control traffic. All other groups are
+//!   created with id `0` (messages sent before the first consumer attaches are
+//!   not lost — bounded‑channel buffer parity).
 //!
 //! # Configuration
 //!
-//! See [`RedisQueueConfig`]: url/prefix/group/block_ms/maxlen.
+//! See [`RedisQueueConfig`]: url/prefix/group/block_ms/maxlen/node.
 
 use async_trait::async_trait;
 use event_base_core::error::CoreError;
@@ -36,11 +44,11 @@ use event_base_core::queues::{ClaimedMessage, EConsumer, EProducer};
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use redis::streams::StreamReadOptions;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 /// Payload field name used inside every stream entry.
@@ -62,6 +70,33 @@ pub struct RedisQueueConfig {
     /// `None` (default) leaves streams unbounded — producers must not outrun
     /// consumers forever, or Redis memory grows.
     pub maxlen: Option<usize>,
+    /// This process's node identity, used to name fan‑out consumer groups
+    /// (`{group}@{node}`). `None` falls back to
+    /// [`try_get_node_name`](event_base_core::try_get_node_name) at queue
+    /// creation; if neither is set, coordination topics degrade to a shared
+    /// competing group (single‑node semantics).
+    pub node: Option<String>,
+}
+
+/// Coordination topics every node must receive a copy of (fan‑out per‑node
+/// consumer groups). Everything else — business topics and Host‑only system
+/// topics — stays on the shared competing group for load‑balanced claiming.
+///
+pub const FANOUT_SYSTEM_TOPICS: &[&str] = &[
+    event_base_core::constant::SYSTEM_TOPIC_SHUTDOWN,
+    event_base_core::constant::SYSTEM_TOPIC_TOPIC_SYNC,
+    event_base_core::constant::SYSTEM_TOPIC_METRICS,
+];
+
+/// Consumer‑group start id for a topic: fan‑out groups begin at `$` (new
+/// entries only — a node that joins later must not act on a stale shutdown
+/// command or replay hours of metrics), everything else at `0`.
+fn group_start_for(topic: &str) -> &'static str {
+    if FANOUT_SYSTEM_TOPICS.contains(&topic) {
+        "$"
+    } else {
+        "0"
+    }
 }
 
 impl RedisQueueConfig {
@@ -73,6 +108,7 @@ impl RedisQueueConfig {
             group: "event_base".to_string(),
             block_ms: 500,
             maxlen: None,
+            node: None,
         }
     }
 
@@ -98,6 +134,31 @@ impl RedisQueueConfig {
     pub fn with_maxlen(mut self, maxlen: usize) -> Self {
         self.maxlen = Some(maxlen);
         self
+    }
+
+    /// Sets this process's node identity explicitly (otherwise fan‑out group
+    /// naming falls back to the global node name).
+    pub fn with_node(mut self, node: impl Into<String>) -> Self {
+        self.node = Some(node.into());
+        self
+    }
+
+    fn node_or_global(&self) -> Option<String> {
+        self.node
+            .clone()
+            .or_else(event_base_core::try_get_node_name)
+    }
+
+    /// Consumer group actually used for `topic`: the shared group for
+    /// business/Host‑only topics, `{group}@{node}` for fan‑out coordination
+    /// topics when a node identity exists.
+    pub fn group_for(&self, topic: &str) -> String {
+        if FANOUT_SYSTEM_TOPICS.contains(&topic)
+            && let Some(node) = self.node_or_global()
+        {
+            return format!("{}@{}", self.group, node);
+        }
+        self.group.clone()
     }
 
     /// Full Redis key for a topic stream.
@@ -202,6 +263,9 @@ pub struct RedisStreamConsumer {
     conn: Option<ConnectionManager>,
     key: String,
     group: String,
+    /// Group creation id: `"0"` (full replay — business/host topics) or
+    /// `"$"` (new entries only — fan‑out coordination groups).
+    group_start: &'static str,
     consumer: String,
     block_ms: usize,
     maxlen: Option<usize>,
@@ -216,6 +280,7 @@ impl RedisStreamConsumer {
         client: redis::Client,
         key: String,
         group: String,
+        group_start: &'static str,
         block_ms: usize,
         maxlen: Option<usize>,
     ) -> Self {
@@ -224,6 +289,7 @@ impl RedisStreamConsumer {
             conn: None,
             key,
             group,
+            group_start,
             consumer: Uuid::new_v4().to_string(),
             block_ms,
             maxlen,
@@ -260,7 +326,7 @@ impl RedisStreamConsumer {
             .arg("CREATE")
             .arg(&self.key)
             .arg(&self.group)
-            .arg("0")
+            .arg(self.group_start)
             .arg("MKSTREAM")
             .query_async::<()>(conn)
             .await;
@@ -405,6 +471,7 @@ pub struct RedisStreamConsumerFactory {
     client: redis::Client,
     key: String,
     group: String,
+    group_start: &'static str,
     block_ms: usize,
     maxlen: Option<usize>,
 }
@@ -415,6 +482,7 @@ impl ConsumerFactory for RedisStreamConsumerFactory {
             self.client.clone(),
             self.key.clone(),
             self.group.clone(),
+            self.group_start,
             self.block_ms,
             self.maxlen,
         ))
@@ -425,6 +493,7 @@ impl ConsumerFactory for RedisStreamConsumerFactory {
             client: self.client.clone(),
             key: self.key.clone(),
             group: self.group.clone(),
+            group_start: self.group_start,
             block_ms: self.block_ms,
             maxlen: self.maxlen,
         })
@@ -436,25 +505,24 @@ impl ConsumerFactory for RedisStreamConsumerFactory {
 /// Global producer used by [`TopicRouter`](event_base_core::topic::TopicRouter):
 /// appends each message to the stream of its own topic.
 ///
-/// Unlike the memory `RoutingProducer`, unknown user topics are accepted (the
-/// shared stream must be publishable cross‑node); unregistered `_system.*`
-/// topics are dropped, matching the memory backend.
+/// Unlike the memory `RoutingProducer`, unknown topics are always accepted —
+/// including `_system.*` topics whose only consumer is registered on another
+/// node (worker discovery/heartbeat to the Host, or the other direction). The
+/// target node's consumer group picks them up; with no consumer anywhere,
+/// entries accumulate in the stream, so prefer [`maxlen`] on multi‑node
+/// deployments.
+///
+/// [`maxlen`]: RedisQueueConfig::maxlen
 pub struct RedisRoutingProducer {
     conn: ConnectionManager,
     prefix: String,
     maxlen: Option<usize>,
-    registered: Arc<RwLock<HashSet<String>>>,
 }
 
 #[async_trait]
 impl EProducer for RedisRoutingProducer {
     async fn send(&self, msg: EMessage) -> Result<(), CoreError> {
-        let topic = msg.topic.0.clone();
-        let known = self.registered.read().await.contains(&topic);
-        if !known && topic.starts_with("_system.") {
-            return Ok(());
-        }
-        let key = format!("{}:{}", self.prefix, topic);
+        let key = format!("{}:{}", self.prefix, msg.topic.0);
         let mut conn = self.conn.clone();
         xadd(&mut conn, &key, &msg, self.maxlen).await
     }
@@ -485,7 +553,6 @@ pub struct RedisStreamQueueFactory {
     client: redis::Client,
     config: RedisQueueConfig,
     main_consumer: Arc<Mutex<RedisStreamConsumer>>,
-    registered: Arc<RwLock<HashSet<String>>>,
 }
 
 impl RedisStreamQueueFactory {
@@ -518,6 +585,7 @@ impl RedisStreamQueueFactory {
             client.clone(),
             main_key,
             config.group.clone(),
+            "0",
             config.block_ms,
             config.maxlen,
         )));
@@ -526,7 +594,6 @@ impl RedisStreamQueueFactory {
             client,
             config,
             main_consumer,
-            registered: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -548,22 +615,17 @@ impl QueueFactory for RedisStreamQueueFactory {
             key: key.clone(),
             maxlen: self.config.maxlen,
         });
+        // Coordination fan‑out topics get a per‑node group (every node sees
+        // every message, started at `$`); everything else shares the group
+        // with full replay for competing consumption.
         let consumer_factory = Arc::new(RedisStreamConsumerFactory {
             client: self.client.clone(),
             key,
-            group: self.config.group.clone(),
+            group: self.config.group_for(topic),
+            group_start: group_start_for(topic),
             block_ms: self.config.block_ms,
             maxlen: self.config.maxlen,
         });
-        let mut registered = match self.registered.try_write() {
-            Ok(guard) => guard,
-            Err(_) => {
-                return Err(CoreError::from(QueueError::Send(
-                    "create_queue: routing table lock contention".to_string(),
-                )));
-            }
-        };
-        registered.insert(topic.to_string());
         Ok((producer, consumer_factory))
     }
 
@@ -572,7 +634,6 @@ impl QueueFactory for RedisStreamQueueFactory {
             conn: self.conn.clone(),
             prefix: self.config.prefix.clone(),
             maxlen: self.config.maxlen,
-            registered: self.registered.clone(),
         }))
     }
 

@@ -74,6 +74,17 @@ pub fn set_node_type(node_type: NodeType) {
     *NODE_TYPE.write().expect("NODE_TYPE poisoned") = Some(Arc::new(node_type));
 }
 
+/// Returns the global node name, or `None` if [`set_node_name`] was never
+/// called.
+///
+/// Non-panicking variant for library-internal use (worker naming, heartbeat
+/// announcement): those features degrade gracefully without a node identity.
+pub fn try_get_node_name() -> Option<String> {
+    NODE_NAME
+        .get()
+        .map(|guard| guard.read().expect("NODE_NAME poisoned").clone())
+}
+
 /// Returns the global node type.
 ///
 /// # Panics

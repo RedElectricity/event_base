@@ -1,7 +1,8 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use event_base_core::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
 use event_base_core::wal::codec::{BincodeCodec, WalRecordCodec};
 use event_base_core::wal::wal::WalRecord;
+use std::hint::black_box;
 use std::time::{Duration, SystemTime};
 
 fn sample_record() -> WalRecord {

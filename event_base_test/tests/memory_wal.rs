@@ -85,9 +85,8 @@ async fn memory_wal_persists_worker_registry() {
     assert_eq!(stored.worker_name, "worker-a");
     assert_eq!(stored.topic, "orders");
 
-    let missing = wal
-        .remove_scheduled("missing-id")
+    wal.remove_scheduled("missing-id")
         .await
         .expect("remove_scheduled should be tolerant for missing ids");
-    assert_eq!(missing, ());
+    assert_eq!((), ());
 }
