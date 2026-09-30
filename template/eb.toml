@@ -1,0 +1,29 @@
+# event_base node configuration.
+# Unknown keys are rejected at load, so a typo fails fast rather than being
+# silently ignored. See `cargo doc -p event_base --features config` for every
+# field.
+
+[node]
+name = "my-app-node"
+role = "host"          # host | worker
+
+[queue]
+backend = "memory"     # memory | redis
+capacity = 100000
+# For redis (requires building event_base with --features redis):
+# backend = "redis"
+# url = "redis://127.0.0.1:6379"
+# prefix = "my-app"
+# block_ms = 2000
+
+[wal]
+backend = "memory"     # memory | persistent | redis
+# backend = "persistent"
+# path = "my-app.wal"
+
+# Uncomment to expose the gRPC control plane (ebctl / remote admin).
+# [grpc]
+# addr = "0.0.0.0:50051"
+# token = ""           # set this if the port is reachable by other machines
+# reflection = true    # disable in production to withhold the API schema
+# health = true

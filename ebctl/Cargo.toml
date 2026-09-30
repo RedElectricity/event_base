@@ -1,0 +1,23 @@
+[package]
+name = "ebctl"
+version = "0.1.0"
+edition = "2024"
+authors = ["RedElectricity <redelectricity@outlook.com>"]
+description = "An Event Driven Framework - operator CLI for the event_base gRPC control plane"
+license = "BSD-3-Clause"
+repository = "https://github.com/RedElectricity/event_base"
+homepage = "https://github.com/RedElectricity/event_base"
+documentation = "https://docs.rs/ebctl"
+readme = "README.md"
+keywords = ["cli", "grpc", "event-driven", "ops", "debug"]
+categories = ["command-line-utilities", "development-tools::debugging"]
+
+[[bin]]
+name = "ebctl"
+path = "src/main.rs"
+
+[dependencies]
+event_base_grpc.workspace = true
+tonic = "0.14.6"
+clap = { version = "4.6.1", features = ["derive", "env"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }

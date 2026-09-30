@@ -1,0 +1,22 @@
+[package]
+name = "my-event-app"
+version = "0.1.0"
+edition = "2024"
+
+# The `template/` directory is a STANDALONE crate scaffolded by cargo-generate.
+# This empty `[workspace]` table opts it out of the parent event_base workspace
+# so `cargo build` at the repo root ignores it, while a dedicated CI job builds
+# it in place (proving the starter always compiles).
+[workspace]
+
+[dependencies]
+# In-tree the path dep points at the umbrella crate. When you publish your app
+# (or scaffold via `cargo generate` outside the repo), change this to the
+# crates.io version:
+#     event_base = "0.8"
+event_base = { path = "..", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+# The `#[handler]` macro expands to `::async_trait` / `::linkme` paths, so any
+# crate using it needs them as direct deps (linkme's proc-macro is unhygienic).
+async-trait = "0.1"
+linkme = "0.3"

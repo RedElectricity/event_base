@@ -1,0 +1,9 @@
+# cargo-generate template definition.
+#   cargo install cargo-generate
+#   cargo generate --path ./template
+# The scaffold copies Cargo.toml / src / eb.toml / README as‑is; edit the
+# package `name` and the `path = ".."` dependency (switch it to
+# `event_base = "0.8"`) once you move it out of the event_base repo.
+
+[template]
+include = ["Cargo.toml", "src/**/*.rs", "eb.toml", "README.md"]

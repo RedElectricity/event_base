@@ -82,6 +82,32 @@ jobs:
           EVENT_BASE_TEST_REDIS_URL: redis://127.0.0.1:6379
         run: cargo test -p event_base_test --features redis -- --nocapture
 
+  # ──────── Starter template must compile against the crates ────────
+  template:
+    name: Template build
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # The template is its own workspace (excluded from the main members) and
+      # depends on event_base via a path dep, so this proves the shipped starter
+      # — Bootstrap + #[handler] + eb.toml — actually builds.
+      - name: cargo build (template)
+        working-directory: template
+        run: cargo build
+
   # ──────── Benchmark ────────
   bench:
     name: Benchmark

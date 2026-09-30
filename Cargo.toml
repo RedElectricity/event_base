@@ -27,9 +27,10 @@ tokio = { version = "1.52.3", features = ["rt", "sync", "macros", "signal"], opt
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["full"] }
-# The `#[handler]` macro expands to `::async_trait` / `::linkme` paths, so any
-# crate using it (including this package's own integration tests) needs them as
-# direct dependencies.
+# The `#[handler]` macro's expansion references `::async_trait` and `::linkme`
+# at the consumer's crate root (linkme's proc-macro emits unhygienic `::linkme`
+# paths), so any crate using it — including this package's own tests/examples —
+# declares them as direct deps. This is a requirement, not incidental.
 async-trait = "0.1.89"
 linkme = "0.3.36"
 
@@ -42,7 +43,8 @@ members = ["event_base_core",
             "event_base_audit",
             "event_base_macro_attr",
             "event_base_macro_func",
-            "event_base_grpc"
+            "event_base_grpc",
+            "ebctl"
             ]
 resolver = "3"
 
