@@ -28,7 +28,12 @@ use std::error::Error;
 #[command(name = "ebctl", version, about = "event_base control‑plane CLI")]
 struct Cli {
     /// Control‑plane address (host:port).
-    #[arg(short = 'a', long, default_value = "127.0.0.1:50051", env = "EBCTL_ADDR")]
+    #[arg(
+        short = 'a',
+        long,
+        default_value = "127.0.0.1:50051",
+        env = "EBCTL_ADDR"
+    )]
     addr: String,
 
     /// Bearer token, if the node requires one.
@@ -131,10 +136,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("ready={} timestamp={}", r.ready, r.timestamp);
         }
         Command::Status => {
-            let s = client
-                .get_node_status(Empty::default())
-                .await?
-                .into_inner();
+            let s = client.get_node_status(Empty::default()).await?.into_inner();
             let role = if s.node_type == 0 { "Host" } else { "Worker" };
             println!("node  : {} ({role})", s.node_name);
             println!("ready : {}", s.ready);
@@ -174,7 +176,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let topics = client.list_topics(Empty::default()).await?.into_inner();
                     for topic in topics.topics {
                         let w = client
-                            .list_workers(ListWorkersRequest { topic: topic.clone() })
+                            .list_workers(ListWorkersRequest {
+                                topic: topic.clone(),
+                            })
                             .await?
                             .into_inner();
                         if !w.workers.is_empty() {
@@ -188,7 +192,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             };
             let w = client
-                .list_workers(ListWorkersRequest { topic: topic.clone() })
+                .list_workers(ListWorkersRequest {
+                    topic: topic.clone(),
+                })
                 .await?
                 .into_inner();
             println!("[{topic}] {} worker(s)", w.total);
@@ -227,10 +233,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Command::NodeMetrics { node } => {
             let n = client
-                .get_node_metrics(ListNodeMetricsRequest { node_name: node.clone() })
+                .get_node_metrics(ListNodeMetricsRequest {
+                    node_name: node.clone(),
+                })
                 .await?
                 .into_inner();
-            println!("node {}: type={} workers={} mem={:.1}%", n.node_name, n.node_type, n.node_worker_count, n.memory_percent);
+            println!(
+                "node {}: type={} workers={} mem={:.1}%",
+                n.node_name, n.node_type, n.node_worker_count, n.memory_percent
+            );
         }
         Command::Publish {
             topic,
@@ -275,11 +286,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     poll_interval_ms,
                     force_timeout_secs,
                 }),
-                ShutdownStrategy::Timeout {
-                    total_timeout_secs,
-                } => Strategy::Timeout(Timeout {
-                    total_timeout_secs,
-                }),
+                ShutdownStrategy::Timeout { total_timeout_secs } => {
+                    Strategy::Timeout(Timeout { total_timeout_secs })
+                }
                 ShutdownStrategy::Batched {
                     batch_size,
                     interval_ms,

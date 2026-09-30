@@ -19,7 +19,10 @@ async fn echo(_msg: &EMessage) -> Ack {
 // This file owns the process‑wide OnceLock singletons; exactly one boot test.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bootstrap_host_boots_and_dispatches() {
-    let running = Bootstrap::host("boot-node").start().await.expect("bootstrap start");
+    let running = Bootstrap::host("boot-node")
+        .start()
+        .await
+        .expect("bootstrap start");
     assert_eq!(running.node_name(), "boot-node");
 
     let msg = EMessage::new(

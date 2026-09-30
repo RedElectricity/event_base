@@ -17,12 +17,12 @@ pub use event_base_macro_attr::handler;
 #[cfg(feature = "macro")]
 pub use event_base_macro_func::{send_msg, start_system};
 
-/// Typed `eb.toml` node configuration (behind the default‑on `config` feature).
-#[cfg(feature = "config")]
-pub mod config;
 /// One‑call [`Bootstrap`](bootstrap::Bootstrap) startup (default‑on `config`).
 #[cfg(feature = "config")]
 pub mod bootstrap;
+/// Typed `eb.toml` node configuration (behind the default‑on `config` feature).
+#[cfg(feature = "config")]
+pub mod config;
 
 #[cfg(feature = "config")]
 pub use bootstrap::{BootError, Bootstrap, Running};

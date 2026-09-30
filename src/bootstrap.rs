@@ -19,10 +19,10 @@
 //! ```
 
 use crate::config::{NodeConfig, QueueBackend, Role, WalBackend};
+use event_base_core::queues::factory::QueueFactory;
 use event_base_core::shutdown::{ShutdownReceiver, ShutdownSender, shutdown_channel};
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::wal::wal::Wal;
-use event_base_core::queues::factory::QueueFactory;
 use event_base_core::{NodeType, try_set_node_name};
 use event_base_macro_func::start_system::start_system_impl;
 use std::net::SocketAddr;
@@ -128,7 +128,9 @@ impl Bootstrap {
     /// # Errors
     /// TOML validation failure.
     pub fn from_toml_str(s: &str) -> Result<Self, BootError> {
-        NodeConfig::from_toml_str(s).map(Self::new).map_err(BootError::new)
+        NodeConfig::from_toml_str(s)
+            .map(Self::new)
+            .map_err(BootError::new)
     }
 
     /// A default in‑memory **Host** named `name` (no control plane).
@@ -179,8 +181,11 @@ impl Bootstrap {
         let (registry_wal, builder_wal) = self.build_wal().await?;
 
         let (shutdown_tx, shutdown_rx) = shutdown_channel();
-        let builder =
-            SystemHandlerBuilder::new(builder_wal, shutdown_tx.clone(), self.config.audit_capacity());
+        let builder = SystemHandlerBuilder::new(
+            builder_wal,
+            shutdown_tx.clone(),
+            self.config.audit_capacity(),
+        );
 
         let final_tx = start_system_impl(node_type, factory, registry_wal, builder).await?;
 
@@ -199,9 +204,9 @@ impl Bootstrap {
 
     async fn build_factory(&self) -> Result<Arc<dyn QueueFactory>, BootError> {
         match self.config.queue.backend {
-            QueueBackend::Memory => Ok(Arc::new(event_base_queue::crossfire::MemoryQueueFactory::new(
-                self.config.queue.capacity,
-            ))),
+            QueueBackend::Memory => Ok(Arc::new(
+                event_base_queue::crossfire::MemoryQueueFactory::new(self.config.queue.capacity),
+            )),
             QueueBackend::Redis => build_redis_factory(&self.config).await,
         }
     }
@@ -287,7 +292,9 @@ async fn build_redis_wal(
 }
 
 #[cfg(not(feature = "redis"))]
-async fn build_redis_wal(_config: &NodeConfig) -> Result<(Box<dyn Wal>, Arc<RwLock<dyn Wal>>), BootError> {
+async fn build_redis_wal(
+    _config: &NodeConfig,
+) -> Result<(Box<dyn Wal>, Arc<RwLock<dyn Wal>>), BootError> {
     Err(BootError::new(
         "redis WAL backend requested but the `redis` feature is disabled — \
          build event_base with --features redis",

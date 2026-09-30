@@ -21,7 +21,7 @@ use event_base_core::topic::TopicRouter;
 use event_base_core::wal::wal::Wal;
 use event_base_core::worker_registry::WorkerRegistry;
 use event_base_core::{NodeType, set_node_name, set_node_type};
-use event_base_grpc::server::event_base::{PublishRequest, FILE_DESCRIPTOR_SET};
+use event_base_grpc::server::event_base::{FILE_DESCRIPTOR_SET, PublishRequest};
 use event_base_grpc::{Empty, ServeConfig, connect};
 use event_base_queue::crossfire;
 use event_base_wal::memory::MemoryWal;
@@ -53,7 +53,9 @@ async fn boot_host() {
         None,
     )
     .expect("consumer init");
-    WorkerRegistry::init(Some(registry_wal)).await.expect("registry");
+    WorkerRegistry::init(Some(registry_wal))
+        .await
+        .expect("registry");
     let (shutdown_tx, _rx) = shutdown_channel();
     SystemHandlerBuilder::new(Arc::new(RwLock::new(MemoryWal::new())), shutdown_tx, 32)
         .register_all()
@@ -83,7 +85,9 @@ async fn free_addr() -> std::net::SocketAddr {
 }
 
 /// Retry‑connect until the listener answers (server task binds asynchronously).
-async fn dial(addr: std::net::SocketAddr) -> event_base_grpc::EventBaseClient<tonic::transport::Channel> {
+async fn dial(
+    addr: std::net::SocketAddr,
+) -> event_base_grpc::EventBaseClient<tonic::transport::Channel> {
     for _ in 0..40 {
         if let Ok(client) = connect(addr.to_string()).await {
             return client;
@@ -203,7 +207,11 @@ fn reflection_descriptor_advertises_current_schema() {
         !FILE_DESCRIPTOR_SET.is_empty(),
         "reflection descriptor must be generated"
     );
-    let contains = |needle: &[u8]| FILE_DESCRIPTOR_SET.windows(needle.len()).any(|w| w == needle);
+    let contains = |needle: &[u8]| {
+        FILE_DESCRIPTOR_SET
+            .windows(needle.len())
+            .any(|w| w == needle)
+    };
     for name in [
         "EventBase",
         "GetNodeMetrics",
@@ -227,9 +235,7 @@ async fn serve_config_gates_all_services_with_token() {
     // reflection and health — so an unauthenticated RespCheck fails before the
     // handler runs. This pins the "auth is uniform across the router" contract.
     let addr = free_addr().await;
-    let server = tokio::spawn(async move {
-        ServeConfig::new(addr).token("gate").serve().await
-    });
+    let server = tokio::spawn(async move { ServeConfig::new(addr).token("gate").serve().await });
     let mut client = dial(addr).await;
 
     let err = client

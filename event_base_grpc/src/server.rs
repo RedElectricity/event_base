@@ -3,7 +3,8 @@ use crate::server::event_base::shutdown_request::Strategy;
 use crate::server::event_base::{
     Empty, LatencyStats, ListNodeMetricsRequest, ListTopicsResponse, ListWorkersRequest,
     ListWorkersResponse, NodeMetrics, NodeStatusResponse, PublishRequest, PublishResponse,
-    RespCheckResponse, ShutdownRequest, ShutdownResponse, TopicInfo, TopicStatsResponse, WorkerInfo,
+    RespCheckResponse, ShutdownRequest, ShutdownResponse, TopicInfo, TopicStatsResponse,
+    WorkerInfo,
 };
 use event_base_core::constant::SYSTEM_TOPIC_SHUTDOWN;
 use event_base_core::message::DeliveryMode::{Broadcast, Standard};
@@ -52,7 +53,9 @@ impl EventBase for EventBaseService {
         {
             return Ok(Response::new(proto_node_metrics(metrics)));
         }
-        Err(Status::not_found(format!("No metrics found for node {node_name:?}")))
+        Err(Status::not_found(format!(
+            "No metrics found for node {node_name:?}"
+        )))
     }
 
     async fn list_workers(
@@ -240,12 +243,7 @@ impl EventBase for EventBaseService {
         let is_host = get_node_type() != Arc::from(NodeType::Worker);
         let node_type = if is_host { 0 } else { 1 };
 
-        let topic_count = TopicRouter::global()
-            .read()
-            .await
-            .list_topics()
-            .await
-            .len() as u32;
+        let topic_count = TopicRouter::global().read().await.list_topics().await.len() as u32;
         let worker_count = WorkerRegistry::global()
             .read()
             .await

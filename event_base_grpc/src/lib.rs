@@ -168,7 +168,8 @@ impl ServeConfig {
             Some((cert_pem, key_pem)) => {
                 use tonic::transport::{Identity, ServerTlsConfig};
                 let tls = ServerTlsConfig::new().identity(Identity::from_pem(cert_pem, key_pem));
-                server.tls_config(tls)
+                server
+                    .tls_config(tls)
                     .map_err(|e| ServeError::Setup(format!("tls config: {e}")))?
             }
             None => server,
@@ -218,7 +219,10 @@ fn server_fdset() -> &'static [u8] {
 /// may be reachable by another process, prefer
 /// [`ServeConfig::token`] or [`ServeConfig::tls`].
 pub async fn serve(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    ServeConfig::new(addr).serve().await.map_err(|e| e.to_string())?;
+    ServeConfig::new(addr)
+        .serve()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -275,9 +279,8 @@ pub async fn serve_tls(
 
 /// The client produced by [`connect_with_token`] / [`connect_tls`]: a channel
 /// wrapped in a bearer‑token [`AuthInterceptor`].
-pub type AuthClient = EventBaseClient<
-    tonic::codegen::InterceptedService<tonic::transport::Channel, AuthInterceptor>,
->;
+pub type AuthClient =
+    EventBaseClient<tonic::codegen::InterceptedService<tonic::transport::Channel, AuthInterceptor>>;
 
 /// Connect a control‑plane client to `addr` (scheme optional; `http://` is
 /// assumed when omitted). This is the one‑line entry `ebctl` and remote

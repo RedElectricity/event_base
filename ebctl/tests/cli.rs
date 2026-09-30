@@ -68,13 +68,7 @@ fn ebctl_help_lists_all_commands() {
         .expect("ebctl --help");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for cmd in [
-        "ping",
-        "status",
-        "topics",
-        "workers",
-        "metrics",
-        "publish",
-        "shutdown",
+        "ping", "status", "topics", "workers", "metrics", "publish", "shutdown",
     ] {
         assert!(stdout.contains(cmd), "`{cmd}` missing from help: {stdout}");
     }
