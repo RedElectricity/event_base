@@ -105,7 +105,7 @@ pub struct WalRecord {
 
 ## Crash recovery
 
-On system restart, `TopicRouter::replay()` is called (automatically by `start_queue_system!`).
+Recovery is a **manual** step: after a restart you call `TopicRouter::global().read().await.replay(..)` to re-deliver pending records. Nothing invokes it for you, so you decide when (and with what topic filter) to recover.
 
 ### Recovery flow
 
@@ -137,12 +137,22 @@ pub struct ReplaySummary {
 You can replay specific topics:
 
 ```rust
+use event_base::core::topic::TopicRouter;
+
+// Replay is manual: call it after the node has booted (Bootstrap/start_system
+// initialize the WAL-backed registry but do not auto-replay).
 let summary = TopicRouter::global()
+    .read()
+    .await
     .replay(Some(&["orders", "payments"]))
     .await?;
 
-println!("Recovered: {}, Delayed: {}, Errors: {}",
-    summary.recovered, summary.delayed, summary.errors.len());
+println!(
+    "Recovered: {}, Delayed: {}, Errors: {}",
+    summary.recovered,
+    summary.delayed,
+    summary.errors.len()
+);
 ```
 
 ---
@@ -187,24 +197,25 @@ Serialization benchmarks:
 
 ## Configuration
 
-When starting the system, pass the WAL to `start_queue_system!`:
+The WAL backend is chosen in `eb.toml` (or via the low-level `start_system!` macro if you wire the globals yourself). A node always requires a WAL — the worker registry persists to it — so there is no "no WAL" boot.
 
-```rust
-// In-memory (no persistence)
-start_queue_system! {
-    factory: MemoryQueueFactory::new(1000),
-    wal: Some(MemoryWal::new()),
-}
+```toml
+# In-memory (lost on restart, but still gives crash detection via replay)
+[wal]
+backend = "memory"
 
-// Persistent (file-backed)
-let wal = PersistentWal::new("./event_base_wal.bin".into()).await?;
-start_queue_system! {
-    factory: MemoryQueueFactory::new(1000),
-    wal: Some(wal),
-}
+# Persistent (file-backed) — build with --features persistent
+[wal]
+backend = "persistent"
+path = "./event_base.wal"
+
+# Redis-backed — build with --features redis
+[wal]
+backend = "redis"
+prefix = "event_base"
 ```
 
-Pass `wal: None` to disable WAL entirely (not recommended for production).
+`Bootstrap::from_file("eb.toml")?.start().await?` then boots the node with the selected backend. See [Configuration](configuration.md).
 
 ---
 

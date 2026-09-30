@@ -1,5 +1,6 @@
 - **Getting Started**
   - [Quick Start](guide/quick-start.md)
+  - [Configuration](guide/configuration.md)
   - [Core Concepts](guide/core-concepts.md)
 
 - **Guides**
@@ -9,6 +10,7 @@
   - [Persistence & WAL](guide/persistence.md)
   - [Shutdown Strategies](guide/shutdown.md)
   - [Distributed Mode](guide/distributed.md)
+  - [gRPC Control Plane & ebctl](guide/grpc.md)
 
 - **Internals**
   - [Architecture](internals/architecture.md)

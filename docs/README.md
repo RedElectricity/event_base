@@ -15,32 +15,43 @@ use event_base::prelude::*;
 
 #[handler(topic = "greeting", workers = 2)]
 async fn handle_greeting(msg: &EMessage) -> Ack {
-    println!("Got: {:?}", msg);
+    let text = String::from_utf8_lossy(&msg.payload.0);
+    println!("Got: {text}");
     Ack::Ack
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(MemoryWal::new()),
-    }
-    send_msg!("greeting", EMessage::new("greeting", b"Hello!".to_vec())).await?;
+    let node = Bootstrap::host("my-node").start().await?;
+
+    let msg = EMessage::new(
+        MessageTopic("greeting".into()),
+        MessagePayload(b"Hello!".to_vec()),
+        DeliveryMode::Standard,
+        None,
+    );
+    event_base::core::topic::TopicRouter::global()
+        .read()
+        .await
+        .send("greeting", msg, None, None)
+        .await?;
+
+    node.wait().await;
     Ok(())
 }
 ```
 
+`#[handler]` needs `async-trait` and `linkme` as direct dependencies (see the [Quick Start](guide/quick-start.md)).
+
 ## Installation
 
 ```bash
-cargo add event_base
+cargo add event_base --features full
 ```
-
-Enable full features:
 
 ```toml
 [dependencies]
-event_base = { version = "0.1", features = ["full"] }
+event_base = { version = "0.8", features = ["full"] }
 ```
 
 ## Guides
@@ -48,6 +59,7 @@ event_base = { version = "0.1", features = ["full"] }
 | Guide | Description |
 |---|---|
 | [Quick Start](guide/quick-start.md) | Complete walkthrough — first handler, first message |
+| [Configuration](guide/configuration.md) | `eb.toml` + the one-line `Bootstrap` |
 | [Core Concepts](guide/core-concepts.md) | EMessage, Handler, Ack, routing, message flow |
 | [Handlers](guide/handler.md) | `#[handler]` macro — parameters, Ack variants |
 | [Middleware](guide/middleware.md) | Write and compose middleware pipelines |
@@ -55,6 +67,7 @@ event_base = { version = "0.1", features = ["full"] }
 | [Persistence & WAL](guide/persistence.md) | Crash recovery, MemoryWal vs PersistentWal |
 | [Shutdown Strategies](guide/shutdown.md) | 7 graceful/forceful shutdown patterns |
 | [Distributed Mode](guide/distributed.md) | Host/Worker nodes, discovery, heartbeats |
+| [gRPC Control Plane & ebctl](guide/grpc.md) | Serve, introspect, and drive a node |
 
 ## Internals
 

@@ -66,8 +66,8 @@ pub enum DeliveryMode {
 use event_base::prelude::*;
 
 let msg = EMessage::new(
-    "order.created",                // topic
-    b"serialized-data".to_vec(),    // payload
+    MessageTopic("order.created".into()),   // topic
+    MessagePayload(b"serialized-data".to_vec()), // payload (raw bytes)
     DeliveryMode::Standard,         // delivery mode
     None,                           // to_worker (None = any worker)
 );
@@ -220,7 +220,7 @@ Below is the complete path a message takes through the system:
 
 ```
 ┌──────────┐
-│  Sender  │  send_msg!("orders", msg)
+│  Sender  │  send_msg!(msg, None, None)   // topic read from msg
 └────┬─────┘
      │
      ▼

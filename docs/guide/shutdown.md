@@ -15,7 +15,7 @@ let (shutdown_tx, _) = shutdown_channel();
 // shutdown_tx: broadcast::Sender<()>
 ```
 
-The sender is returned by `start_queue_system!` and can be used to initiate shutdown.
+`start_system!` returns this sender (it is the **same** channel the built‑in `ShutdownHandler`, the user `#[handler]`s, and `Bootstrap` share). When you boot via `Bootstrap`, you don't build the channel yourself — `Running::shutdown_sender()` hands it back, and `Running::wait().await` blocks until either a shutdown signal or Ctrl‑C fires it.
 
 ---
 

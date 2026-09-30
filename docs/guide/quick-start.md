@@ -1,20 +1,23 @@
 # Quick Start
 
-This guide walks you through your first `event_base` application — defining a handler, sending a message, and starting the system.
+This guide walks you through your first `event_base` application — defining a handler, publishing a message, and starting the system with one line. Every snippet here is compiled by CI (see `examples/quick_start.rs`), so it builds against the released crate.
 
 ---
 
 ## Prerequisites
 
 - Rust 2024 edition or later
-- `tokio` runtime (multi-thread recommended)
+- `tokio` runtime (multi-thread)
 
-## Add the dependency
+## Add the dependencies
 
 ```bash
-cargo add event_base
+cargo add event_base --features full
 cargo add tokio --features full
+cargo add async-trait linkme
 ```
+
+`async-trait` and `linkme` are required because the `#[handler]` macro expands to `::async_trait` and `::linkme` at your crate root (linkme's proc-macro is unhygienic, so it cannot be hidden behind a re-export).
 
 ## Step 1: Define a handler
 
@@ -31,34 +34,55 @@ async fn handle_greeting(msg: &EMessage) -> Ack {
 }
 ```
 
-The macro generates a handler struct, implements `EHandler`, and registers it in the global handler registry at compile time via `linkme`.
+The macro generates a handler struct, implements `EHandler`, and registers it in the global handler registry at compile time via `linkme`. `workers = 2` means two concurrent worker tasks compete for messages on this topic.
 
 ## Step 2: Start the system
 
-Use the `start_queue_system!` macro to initialize all global components:
+One `Bootstrap` call initializes the global routers, the system handlers, your registered handlers, the consumer dispatch loop, the tracing layer, and (on a Host) the delay scheduler:
 
 ```rust
-use event_base::flume::MemoryQueueFactory;
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let wal = event_base::memory_wal::MemoryWal::new();
+    let node = Bootstrap::host("my-node").start().await?;
 
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(wal),
-    }
+    // System is now running — send messages.
+    // ...
 
-    // System is now running — send messages
-    send_msg!("greeting", EMessage::new("greeting", b"Hello, world!".to_vec())).await?;
-
-    // Keep the process alive
-    tokio::signal::ctrl_c().await?;
+    node.wait().await; // block until Ctrl-C or a `Shutdown` command
     Ok(())
 }
 ```
 
-## Step 3: Run it
+`Bootstrap::host` boots an in-memory single-process node. To drive the role, queue/WAL backend, and an optional gRPC control plane from a file, see [Configuration](configuration.md).
+
+## Step 3: Send a message
+
+Build an `EMessage` and route it through the `TopicRouter`:
+
+```rust
+let msg = EMessage::new(
+    MessageTopic("greeting".into()),
+    MessagePayload(b"Hello, world!".to_vec()),
+    DeliveryMode::Standard,
+    None,
+);
+
+event_base::core::topic::TopicRouter::global()
+    .read()
+    .await
+    .send("greeting", msg, None, None)
+    .await?;
+```
+
+The four `EMessage::new` arguments are topic, payload, delivery mode, and an optional target worker. The `send` arguments are topic, message, `try_send` (`None` = blocking), and `timeout` (`None`).
+
+You can also use the `send_msg!` macro from the prelude, which wraps the same call:
+
+```rust
+send_msg!(msg, None, None)?;
+```
+
+## Step 4: Run it
 
 ```bash
 cargo run
@@ -67,6 +91,7 @@ cargo run
 You should see output like:
 
 ```
+my-node running
 [some-uuid-here] Got: Hello, world!
 ```
 
@@ -74,88 +99,30 @@ You should see output like:
 
 ## Complete runnable example
 
-Here is the full `src/main.rs`:
+The full program lives at [`examples/quick_start.rs`](https://github.com/RedElectricity/event_base/blob/main/examples/quick_start.rs) and runs with:
 
-```rust
-use event_base::prelude::*;
-use event_base::flume::MemoryQueueFactory;
-use event_base::memory_wal::MemoryWal;
-
-/// A handler that processes messages on the "greeting" topic.
-///
-/// `workers = 2` means two concurrent worker tasks process messages
-/// from this topic in parallel (competing consumers).
-#[handler(topic = "greeting", workers = 2)]
-async fn handle_greeting(msg: &EMessage) -> Ack {
-    let text = String::from_utf8_lossy(&msg.payload.0);
-    println!("[{}] Received: {}", msg.id, text);
-
-    // Return Ack::Ack to mark the message as successfully processed.
-    // The WAL will record it as Complete.
-    Ack::Ack
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ── 1. Create a WAL for durability ──────────────────────────────
-    // MemoryWal keeps records in RAM. Swap with PersistentWal for
-    // disk-backed persistence that survives restarts.
-    let wal = MemoryWal::new();
-
-    // ── 2. Start the system ─────────────────────────────────────────
-    // This initializes:
-    //   - TopicRouter (routes messages by topic)
-    //   - ConsumerRouter (dispatches to workers)
-    //   - WorkerRegistry (tracks active workers)
-    //   - All system handlers (audit, trace, shutdown, discovery, etc.)
-    //   - The main consumer loop (claims and routes messages)
-    //   - The tracing layer (emits TraceRecords to _system.trace)
-    //   - The delay scheduler (Host only — delivers delayed messages)
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(wal),
-    };
-
-    // ── 3. Send a message ───────────────────────────────────────────
-    // Messages are envelopes carrying a topic, payload, and metadata.
-    // The TopicRouter appends to WAL, then pushes to the queue.
-    send_msg!("greeting", EMessage::new(
-        "greeting",                     // topic
-        b"Hello from event_base!".to_vec(), // payload (raw bytes)
-    ))
-    .await?;
-
-    // ── 4. Wait for shutdown signal ─────────────────────────────────
-    tokio::signal::ctrl_c().await?;
-    println!("Shutting down...");
-
-    Ok(())
-}
+```bash
+cargo run --example quick_start
 ```
 
-Add to `Cargo.toml`:
-
-```toml
-[dependencies]
-event_base = "0.1.0"
-tokio = { version = "1", features = ["full"] }
-```
+It boots a Host, registers one handler, publishes a message, waits for the worker to see it, and shuts down cleanly. A `template/` directory scaffolds the same shape via `cargo generate`.
 
 ---
 
 ## What just happened?
 
-1. The `#[handler]` macro registered `handle_greeting` for topic `"greeting"` with 2 workers.
-2. `start_queue_system!` initialized all globals and started the consumer dispatch loop.
-3. `send_msg!` created an `EMessage`, appended it to the WAL, and pushed it onto the queue.
+1. The `#[handler]` macro registered `handle_greeting` for topic `"greeting"` with 2 workers (compile time).
+2. `Bootstrap::start` initialized all globals and started the consumer dispatch loop.
+3. `TopicRouter::send` pushed the message onto the `greeting` queue.
 4. The `ConsumerRouter` claimed the message, selected an idle worker, and forwarded it.
 5. The worker ran the handler, which printed the payload and returned `Ack::Ack`.
-6. The WAL recorded the message as `Complete`.
 
 ---
 
 ## Next steps
 
+- [Configuration](configuration.md) — `eb.toml` and the full `Bootstrap` surface
 - [Core Concepts](core-concepts.md) — Understand the EMessage, Handler, Ack model
 - [Handlers](handler.md) — Deep dive into `#[handler]` parameters and Ack variants
 - [Sending Messages](sending.md) — Standard, Broadcast, and Repeated delivery
+- [gRPC Control Plane & ebctl](grpc.md) — Inspect and drive a running node

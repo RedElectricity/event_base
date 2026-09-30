@@ -122,20 +122,12 @@ The Host processes topic discovery messages and can push configuration updates b
 
 ```rust
 use event_base::prelude::*;
-use event_base::flume::MemoryQueueFactory;
-use event_base::memory_wal::MemoryWal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    set_node_name("host-1".to_string());
-
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(MemoryWal::new()),
-    }
-
-    // Host is running — handles system topics and delay scheduler
-    tokio::signal::ctrl_c().await?;
+    // Host role: owns system topics, the delay scheduler, registry cleanup.
+    let node = Bootstrap::host("host-1").start().await?;
+    node.wait().await;
     Ok(())
 }
 ```
@@ -144,49 +136,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 use event_base::prelude::*;
-use event_base::flume::MemoryQueueFactory;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    set_node_name("worker-1".to_string());
-
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(MemoryWal::new()),
-    }
-
-    // Worker is running — will discover Host and start processing
-    tokio::signal::ctrl_c().await?;
+    // Worker role: registers its handlers, heartbeats to the Host, processes.
+    let node = Bootstrap::worker("worker-1").start().await?;
+    node.wait().await;
     Ok(())
 }
 ```
 
-> In a distributed setup, nodes must share a queue backend. The built-in `MemoryQueueFactory` only works for single-process deployments — for multiple processes enable the `redis` feature and point every node at the same Redis:
+> In a distributed setup, nodes must share a queue backend. The default in‑memory backend only works for a single process — for multiple processes enable the `redis` feature and point every node at the same Redis. `Bootstrap` reads the backend from `eb.toml`, so the whole topology is config, not code:
 
 ```rust
 use event_base::prelude::*;
-use event_base::redis_streams::{RedisQueueConfig, RedisStreamQueueFactory};
-use event_base::redis_wal::RedisWal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    set_node_name("host-1".to_string());
-
-    let factory = RedisStreamQueueFactory::with_config(
-        RedisQueueConfig::new("redis://127.0.0.1:6379"),
-    )
-    .await?;
-    let wal = RedisWal::new("redis://127.0.0.1:6379").await?;
-
-    start_queue_system! {
-        factory: factory,
-        wal: Some(wal),
-    }
-
-    tokio::signal::ctrl_c().await?;
+    let node = Bootstrap::from_file("eb.toml")?.start().await?;
+    node.wait().await;
     Ok(())
 }
 ```
+
+```toml
+# eb.toml — build event_base with --features redis for this to boot
+[node]
+name = "host-1"
+role = "host"
+
+[queue]
+backend = "redis"
+url = "redis://127.0.0.1:6379"
+prefix = "my-cluster"
+
+[wal]
+backend = "redis"      # reuses queue.url when wal.url is empty
+```
+
+Every node uses a distinct `name` (it becomes the consumer-group / node identity on the shared streams); business topics compete across nodes while `_system.*` coordination topics fan out per node.
 
 Every topic becomes a Redis stream (`{prefix}:{topic}`). Business topics share
 one consumer group, so workers on different machines **compete** for messages;

@@ -16,7 +16,7 @@
 | Category | Feature | Description |
 |---|---|---|
 | **Events** | EMessage + Handler + Ack | Type-safe message envelope with async handlers and explicit ack semantics |
-| **DX** | Macro-driven | `#[handler]`, `send_msg!`, `start_queue_system!` — zero boilerplate |
+| **DX** | Macro-driven | `#[handler]`, `send_msg!`, `start_system!`, and a one-line `Bootstrap` — zero boilerplate |
 | **Delivery** | 3 modes | Standard (competing consumers), Broadcast (all workers), Repeated (N times) |
 | **Persistence** | WAL | Write-ahead log with crash recovery — `MemoryWal`, `PersistentWal`, and `RedisWal` (feature `redis`) |
 | **Resilience** | Dead Letter Queue | Automatic DLQ after max retries or explicit `Ack::Dead` |
@@ -27,32 +27,61 @@
 | **Observability** | Tracing | Distributed tracing via `tracing` crate + `TraceLayer` |
 | **Observability** | Metrics | Per-node and system-level metrics |
 | **Middleware** | Composable | `impl Middleware` — logger, metrics, auth, or custom |
-| **Management** | gRPC API | Query node status, list workers, trigger shutdown, stream metrics (optional) — `serve_with_token` / `serve_tls` gate the control plane |
+| **Management** | gRPC API | `ServeConfig` serves status/metrics/workers, `Publish`, and shutdown, with gRPC Server Reflection + the standard Health service on by default; `token` / TLS gate it. Drive it from the shell with the [`ebctl`](ebctl/) CLI |
 
 ---
 
 ## Quick Start
+
+A complete, compiling node in ~25 lines. Boot it with `cargo run`, or scaffold a project from it with [`cargo generate`](template/).
 
 ```rust
 use event_base::prelude::*;
 
 #[handler(topic = "order", workers = 2)]
 async fn handle_order(msg: &EMessage) -> Ack {
-    println!("Received order: {:?}", msg);
+    println!("[{}] received order", msg.id);
     Ack::Ack
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let wal = event_base::memory_wal::MemoryWal::new();
-    start_queue_system! {
-        factory: MemoryQueueFactory::new(1000),
-        wal: Some(wal),
-    }
-    send_msg!("order", EMessage::new("order", b"hello".to_vec())).await?;
+    // One line wires the router, consumer loop, system handlers, your
+    // #[handler]s, and (optionally) the gRPC control plane.
+    let node = Bootstrap::host("demo").start().await?;
+
+    // Publish a message on the `order` topic.
+    let msg = EMessage::new(
+        MessageTopic("order".into()),
+        MessagePayload(b"hello".to_vec()),
+        DeliveryMode::Standard,
+        None,
+    );
+    event_base::core::topic::TopicRouter::global()
+        .read()
+        .await
+        .send("order", msg, None, None)
+        .await?;
+
+    node.wait().await; // block until Ctrl-C or a `Shutdown` command
     Ok(())
 }
 ```
+
+`#[handler]` expands to `::async_trait` and `::linkme`, so declare them as direct
+dependencies:
+
+```toml
+[dependencies]
+event_base = { version = "0.8", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+linkme = "0.3"
+```
+
+For config-driven boots, drop an `eb.toml` next to the binary and use
+`Bootstrap::from_file("eb.toml")?` instead of `Bootstrap::host(..)` — see the
+[Configuration guide](docs/guide/configuration.md).
 
 ---
 
@@ -66,7 +95,7 @@ Enable features as needed:
 
 ```toml
 [dependencies]
-event_base = { version = "0.1", features = ["full"] }
+event_base = { version = "0.8", features = ["full"] }
 ```
 
 ### Feature flags
@@ -75,10 +104,12 @@ event_base = { version = "0.1", features = ["full"] }
 |---|---|---|
 | `memory` | In-memory queue (`flume`) and WAL (`MemoryWal`) | ✅ |
 | `macro` | `#[handler]` attribute and `send_msg!` / `start_system!` macros | ✅ |
+| `config` | `eb.toml` `NodeConfig` + one-line `Bootstrap` (pulls `toml`/`serde`/`tokio`) | ✅ |
 | `persistent` | File-based `PersistentWal` | ❌ |
 | `redis` | Redis Streams queue factory + `RedisWal` backend | ❌ |
 | `middleware` | Built-in middleware (Logger, etc.) | ❌ |
-| `gRPC` | gRPC management API (query, shutdown, metrics) | ❌ |
+| `gRPC` | Re-export of the gRPC control‑plane module | ❌ |
+| `grpc-tls` | TLS for the gRPC server (`ServeConfig::tls`) | ❌ |
 | `audit` | Audit logging subsystem | ❌ |
 
 ---
@@ -147,6 +178,7 @@ Benchmarks measured with `criterion` (see `event_base_test/benches/`).
 ## Documentation
 
 - [Quick Start](docs/guide/quick-start.md)
+- [Configuration (eb.toml & Bootstrap)](docs/guide/configuration.md)
 - [Core Concepts](docs/guide/core-concepts.md)
 - [Handlers](docs/guide/handler.md)
 - [Middleware](docs/guide/middleware.md)
@@ -154,6 +186,7 @@ Benchmarks measured with `criterion` (see `event_base_test/benches/`).
 - [Persistence & WAL](docs/guide/persistence.md)
 - [Shutdown Strategies](docs/guide/shutdown.md)
 - [Distributed Mode](docs/guide/distributed.md)
+- [gRPC Control Plane & ebctl](docs/guide/grpc.md)
 - [Architecture](docs/internals/architecture.md)
 - [API Reference](https://docs.rs/event_base)
 

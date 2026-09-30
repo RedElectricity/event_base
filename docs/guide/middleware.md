@@ -173,7 +173,12 @@ let pipeline = Pipeline::new(Box::new(MyHandler))
     .with(LoggerMiddleware)
     .with(MetricsMiddleware);
 
-let mut msg = EMessage::new("test", b"data".to_vec(), DeliveryMode::Standard, None);
+let mut msg = EMessage::new(
+    MessageTopic("test".into()),
+    MessagePayload(b"data".to_vec()),
+    DeliveryMode::Standard,
+    None,
+);
 let ack = pipeline.run(&mut msg).await;
 ```
 
