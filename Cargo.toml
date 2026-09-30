@@ -50,7 +50,7 @@ resolver = "3"
 
 [workspace.dependencies]
 event_base_core = { path = "event_base_core", version = "1.8.0" }
-event_base_wal = { path = "event_base_wal", version = "0.3.0" }
+event_base_wal = { path = "event_base_wal", version = "0.4.0" }
 event_base_queue = { path = "event_base_queue", version = "0.6.0" }
 event_base_audit = { path = "event_base_audit", version = "0.1.1" }
 event_base_grpc = { path = "event_base_grpc", version = "0.1.3" }
