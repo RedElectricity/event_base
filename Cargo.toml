@@ -20,6 +20,19 @@ event_base_middleware.workspace = true
 event_base_queue.workspace = true
 event_base_wal.workspace = true
 
+# `config` feature only — eb.toml parsing + the typed NodeConfig + Bootstrap.
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+toml = { version = "0.8.23", optional = true }
+tokio = { version = "1.52.3", features = ["rt", "sync", "macros", "signal"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+# The `#[handler]` macro expands to `::async_trait` / `::linkme` paths, so any
+# crate using it (including this package's own integration tests) needs them as
+# direct dependencies.
+async-trait = "0.1.89"
+linkme = "0.3.36"
+
 [workspace]
 members = ["event_base_core",
             "event_base_wal",
@@ -44,8 +57,8 @@ event_base_macro_func = { path = "event_base_macro_func", version = "0.4.2" }
 event_base_middleware = { path = "event_base_middleware", version = "0.1.0" }
 
 [features]
-default = ["memory", "macro"]
-full = ["gRPC", "middleware", "macro", "memory", "persistent","audit","redis"]
+default = ["memory", "macro", "config"]
+full = ["gRPC", "middleware", "macro", "memory", "persistent","audit","redis","config"]
 
 gRPC = []
 middleware = []
@@ -53,5 +66,7 @@ audit = []
 memory = []
 persistent = []
 macro = []
+# eb.toml NodeConfig + one‑line Bootstrap. On by default; pulls `toml`/`serde`/`tokio`.
+config = ["dep:serde", "dep:toml", "dep:tokio"]
 redis = ["event_base_queue/redis", "event_base_wal/redis"]
 grpc-tls = ["gRPC", "event_base_grpc/tls"]

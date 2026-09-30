@@ -154,6 +154,7 @@ pub fn handler_impl(args: TokenStream, input: TokenStream) -> Result<TokenStream
         }
 
         #[linkme::distributed_slice(::event_base::core::registry::HANDLER_REGISTRY)]
+        #[allow(non_upper_case_globals)]
         static #entry_ident: ::event_base::core::registry::HandlerEntry = ::event_base::core::registry::HandlerEntry {
             topic: #topic,
             register_fn: &#register_ident,

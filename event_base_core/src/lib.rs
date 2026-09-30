@@ -51,6 +51,17 @@ pub fn set_node_name(node_name: String) {
         .expect("Node name already set");
 }
 
+/// Non‑panicking [`set_node_name`]: returns `Err(name)` if the node name was
+/// already established. Used by [`Bootstrap`](https://docs.rs/event_base) and
+/// any embedding host that may boot more than once per process and must fail
+/// softly rather than abort.
+pub fn try_set_node_name(node_name: String) -> Result<(), String> {
+    NODE_NAME
+        .set(RwLock::new(node_name))
+        .map(|_| ())
+        .map_err(|_| "node name already set".to_string())
+}
+
 /// Returns the global node name.
 ///
 /// # Panics

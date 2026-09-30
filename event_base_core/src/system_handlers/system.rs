@@ -94,6 +94,17 @@ impl SystemHandlerBuilder {
         self
     }
 
+    /// The shutdown sender this builder wired into the `ShutdownHandler`.
+    ///
+    /// `start_system` reuses this handle to register user `#[handler]`s, so the
+    /// control‑plane shutdown channel, the built‑in handlers, and the returned
+    /// `ShutdownSender` are all the **same** channel — firing one signals all.
+    /// (Previously `start_system` minted a second channel, so a fired shutdown
+    /// never reached the handle callers awaited on.)
+    pub fn shutdown_sender(&self) -> ShutdownSender {
+        self.shutdown_handler.clone()
+    }
+
     /// Registers all system handlers to the global `ConsumerRouter`.
     ///
     /// This method initializes the global managers and then, depending on the

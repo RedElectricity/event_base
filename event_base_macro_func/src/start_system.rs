@@ -7,7 +7,7 @@ use event_base_core::message::DeliveryMode::Standard;
 use event_base_core::message::{EMessage, MessagePayload, MessageTopic};
 use event_base_core::queues::consumer_router::ConsumerRouter;
 use event_base_core::queues::factory::QueueFactory;
-use event_base_core::shutdown::{ShutdownSender, shutdown_channel};
+use event_base_core::shutdown::ShutdownSender;
 use event_base_core::system_handlers::system::SystemHandlerBuilder;
 use event_base_core::system_handlers::topic::TopicDiscoveryMessage;
 use event_base_core::topic::TopicRouter;
@@ -66,7 +66,12 @@ pub async fn start_system_impl(
 
     WorkerRegistry::init(Option::from(wal_init.clone())).await?;
 
-    let (shutdown_tx, _) = shutdown_channel();
+    // Reuse the SAME control‑plane channel the builder wired into its
+    // `ShutdownHandler`, so a fired shutdown reaches the built‑in handlers, the
+    // user `#[handler]`s registered below, AND the `ShutdownSender` we return —
+    // one channel, one source of truth. (Was: `let (tx, _) = shutdown_channel()`
+    // minting a *second* channel disconnected from the returned handle.)
+    let shutdown_tx = system_builder.shutdown_sender();
 
     system_builder.register_all().await?;
 
