@@ -13,12 +13,14 @@ documentation = "https://docs.rs/event_base"
 prost = "0.14.4"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
+tonic-health = "0.14"
+tonic-reflection = { version = "0.14", features = ["server"] }
 event_base_core.workspace = true
 serde_json = "1.0.150"
 
 [features]
-# Server TLS (rustls + ring) for `serve_tls`. Token auth (`serve_with_token`)
-# is always available and needs no feature.
+# Server TLS (rustls + ring) for `ServeConfig::tls` / `serve_tls`. Token auth
+# (`ServeConfig::token`) is always available and needs no feature.
 tls = ["tonic/tls-ring"]
 
 [build-dependencies]
