@@ -52,15 +52,12 @@ impl WorkerRegistry {
     /// # Errors
     /// Returns `CoreError` if loading fails or if already initialized.
     pub async fn init(wal: Option<Arc<RwLock<Box<dyn Wal>>>>) -> Result<(), CoreError> {
-        let wr = wal
-            .clone()
-            .unwrap() // PANIC SAFETY: WAL is critical for data integrity. Failing fast is preferred.
-            .read()
-            .await
-            .load_worker_registry()
-            .await?;
+        let wal_arc = wal.ok_or_else(|| {
+            CoreError::Unsupported("WorkerRegistry requires a WAL (pass Some(..))".into())
+        })?;
+        let wr = wal_arc.read().await.load_worker_registry().await?;
         let registry = WorkerRegistry {
-            wal,
+            wal: Some(wal_arc),
             workers: RwLock::from(wr),
         };
         WORKER_REGISTRY

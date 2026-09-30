@@ -25,6 +25,12 @@ static TOPIC_ROUTER: OnceLock<RwLock<TopicRouter>> = OnceLock::new();
 pub struct TopicRouter {
     inner: RwLock<Vec<String>>,
     producer: Arc<dyn EProducer>,
+    /// Fallback send timeout applied by [`send`](Self::send) when the caller
+    /// passes `timeout = None` and is not doing a `try_send`. `None` (the
+    //  default) preserves the historical block‑until‑space behaviour; a fleet
+    //  that wants backpressure to surface as an error rather than a stalled
+    //  await sets this once at boot.
+    default_send_timeout: RwLock<Option<Duration>>,
 }
 
 /// Summary of a replay operation.
@@ -47,6 +53,7 @@ impl TopicRouter {
         let router = TopicRouter {
             inner: RwLock::new(Vec::new()),
             producer,
+            default_send_timeout: RwLock::new(None),
         };
         TOPIC_ROUTER
             .set(RwLock::new(router))
@@ -171,27 +178,41 @@ impl TopicRouter {
                 let mut copy = msg.clone();
                 copy.id = format!("{}-{}", msg.id, worker_index.worker_name);
                 copy.to_worker = Some(worker_index.worker_name);
-                if try_send.unwrap_or(false) {
-                    self.producer.try_send(copy).await?;
-                } else if let Some(to) = timeout {
-                    self.producer.send_timeout(copy, to).await?;
-                } else {
-                    self.producer.send(copy).await?;
-                }
+                self.emit(copy, try_send, timeout).await?;
             }
             return Ok(());
         }
 
         msg.topic = MessageTopic(topic.to_string());
 
+        self.emit(msg, try_send, timeout).await
+    }
+
+    /// Pushes one message to the producer, honouring `try_send`/`timeout`, and
+    /// falling back to the router‑wide [`set_default_send_timeout`] when the
+    /// caller passed neither. Centralizes the three former copy‑paste send
+    /// strategies so backpressure policy lives in one place.
+    async fn emit(
+        &self,
+        msg: EMessage,
+        try_send: Option<bool>,
+        timeout: Option<Duration>,
+    ) -> Result<(), CoreError> {
         if try_send.unwrap_or(false) {
-            self.producer.try_send(msg).await?;
-        } else if let Some(to) = timeout {
-            self.producer.send_timeout(msg, to).await?;
+            self.producer.try_send(msg).await
+        } else if let Some(to) = timeout.or(*self.default_send_timeout.read().await) {
+            self.producer.send_timeout(msg, to).await
         } else {
-            self.producer.send(msg).await?;
+            self.producer.send(msg).await
         }
-        Ok(())
+    }
+
+    /// Sets a router‑wide fallback send timeout. When a [`send`](Self::send) /
+    /// [`send_system`](Self::send_system) call supplies neither `try_send=true`
+    /// nor an explicit `timeout`, this bound is applied instead of blocking
+    /// forever on a full queue. `None` (default) keeps the blocking behaviour.
+    pub async fn set_default_send_timeout(&self, timeout: Option<Duration>) {
+        *self.default_send_timeout.write().await = timeout;
     }
 
     /// Sends a system message without WAL persistence.
@@ -206,14 +227,7 @@ impl TopicRouter {
         try_send: Option<bool>,
         timeout: Option<Duration>,
     ) -> Result<(), CoreError> {
-        if try_send.unwrap_or(false) {
-            self.producer.try_send(msg).await?;
-        } else if let Some(to) = timeout {
-            self.producer.send_timeout(msg, to).await?;
-        } else {
-            self.producer.send(msg).await?;
-        }
-        Ok(())
+        self.emit(msg, try_send, timeout).await
     }
 
     /// Background task that periodically checks for ready delayed messages and sends them.

@@ -189,3 +189,51 @@ async fn discovery_published_by_node_without_local_consumer() {
         .expect("decodes");
     assert_eq!(got.payload.0, b"worker announced".to_vec());
 }
+
+#[tokio::test]
+async fn crashed_claim_is_reclaimed_by_another_consumer() {
+    // Models the durability gap: a consumer claims (entry enters its PEL) then
+    // dies without acking. A different consumer on the same group must be able
+    // to `claim_stale` (XAUTOCLAIM) it once idle — the recovery that keeps a
+    // dead node's half‑handled work from rotting in the pending list.
+    let Some(url) = redis_url() else { return };
+    let prefix = test_prefix("reap");
+    let f = node_factory(&url, &prefix, "nodeA").await;
+    let (producer, cf) = f.create_queue("reap-test").expect("queue");
+
+    // Warm the group.
+    let mut c1 = cf.create_consumer();
+    let _ = tokio::time::timeout(Duration::from_secs(3), c1.claim()).await;
+
+    producer
+        .send(message("reap-test", b"abandoned job"))
+        .await
+        .expect("send");
+
+    // c1 claims and never acks (the "crash").
+    let claimed = tokio::time::timeout(Duration::from_secs(5), c1.claim())
+        .await
+        .expect("claim")
+        .expect("one")
+        .expect("some message");
+    assert_eq!(claimed.message.payload.0, b"abandoned job".to_vec());
+    // Drop c1's *handle* usage: we simply never ack this claim.
+
+    // Give the entry a real idle span, then a second consumer reclaims it.
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let mut c2 = cf.create_consumer();
+    let stale = c2
+        .claim_stale(Duration::from_millis(100))
+        .await
+        .expect("xautoclaim");
+    assert_eq!(stale.len(), 1, "the abandoned claim must be reclaimable");
+    assert_eq!(stale[0].message.payload.0, b"abandoned job".to_vec());
+
+    // Reclaim is one‑shot: after c2 acks, nothing is left idle.
+    c2.ack(&stale[0].claim_id).await.expect("ack reclaimed");
+    let again = c2
+        .claim_stale(Duration::from_millis(100))
+        .await
+        .expect("second reap");
+    assert!(again.is_empty(), "acked entries leave the PEL");
+}

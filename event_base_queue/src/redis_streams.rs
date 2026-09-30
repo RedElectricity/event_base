@@ -173,8 +173,14 @@ fn encode_msg(msg: &EMessage) -> Result<Vec<u8>, CoreError> {
 }
 
 fn decode_msg(bytes: &[u8]) -> Result<EMessage, CoreError> {
-    let (msg, _) = bincode::decode_from_slice(bytes, bincode::config::standard())
-        .map_err(|e| CoreError::from(QueueError::Receive(format!("decode failed: {e}"))))?;
+    let (msg, _): (EMessage, usize) =
+        bincode::decode_from_slice(bytes, bincode::config::standard())
+            .map_err(|e| CoreError::from(QueueError::Receive(format!("decode failed: {e}"))))?;
+    // Cross‑process decode is the choke point for wire‑version enforcement:
+    // a node speaking an OLDER envelope than this message must reject it
+    // loudly rather than mis‑read fields.
+    msg.check_wire_version()
+        .map_err(|e| CoreError::from(QueueError::Receive(e.to_string())))?;
     Ok(msg)
 }
 
@@ -461,6 +467,63 @@ impl EConsumer for RedisStreamConsumer {
                 claim_id.to_string(),
             ))),
         }
+    }
+
+    /// `XAUTOCLAIM` over the consumer‑group PEL: moves to *this* consumer every
+    /// entry idle for at least `min_idle` (delivered to, but never
+    /// acknowledged by, some consumer — canonically a node that crashed
+    /// mid‑processing) and returns them as fresh claims.
+    ///
+    /// This is the durable‑backend recovery that keeps a dead node's
+    /// half‑handled messages from rotting in the pending list; the topic
+    /// dispatcher drives it periodically.
+    async fn claim_stale(&mut self, min_idle: Duration) -> Result<Vec<ClaimedMessage>, CoreError> {
+        let mut conn = self.ready_conn().await?;
+        let options = redis::streams::StreamAutoClaimOptions::default().count(64);
+        let reply: redis::streams::StreamAutoClaimReply = conn
+            .xautoclaim_options(
+                self.key.as_str(),
+                self.group.as_str(),
+                self.consumer.as_str(),
+                min_idle.as_millis() as u64,
+                "0-0",
+                options,
+            )
+            .await
+            .map_err(recv_err)?;
+
+        let now = SystemTime::now();
+        let mut out = Vec::new();
+        let mut pending = self.pending.lock().await;
+        for entry in reply.claimed {
+            // An entry the stream already trimmed (but XAUTOCLAIM still
+            // surfaces a slot for) decodes to nothing — skip it; it is not in
+            // our PEL to lose.
+            let Some(bytes) = entry.get::<Vec<u8>>(MSG_FIELD) else {
+                continue;
+            };
+            match decode_msg(&bytes) {
+                Ok(msg) => {
+                    let claim_id = Uuid::new_v4().to_string();
+                    pending.insert(claim_id.clone(), (entry.id.clone(), msg.clone()));
+                    out.push(ClaimedMessage {
+                        message: msg,
+                        claim_id,
+                        claimed_at: now,
+                    });
+                }
+                Err(e) => {
+                    // Undecodable / wrong‑version entry: drop it from our PEL so
+                    // it can't poison every future reap.
+                    eprintln!(
+                        "[REDIS-REAP] dropping un-reclaimable stale entry {}:{}: {e}",
+                        self.key, entry.id
+                    );
+                    let _ = xack(&mut conn, &self.key, &self.group, &entry.id).await;
+                }
+            }
+        }
+        Ok(out)
     }
 }
 

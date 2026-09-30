@@ -8,6 +8,14 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use uuid::Uuid;
 
+/// The wire schema version this build of `event_base` speaks.
+///
+/// Producers stamp [`EMessage::version`] with it; receivers reject anything
+/// **newer** (see [`EMessage::check_wire_version`]). That turns a silent
+/// mis‑interpretation of a future envelope layout into a loud, countable
+/// decode error — the safe direction for mixed‑version fleets rolling out.
+pub const CURRENT_SCHEMA_VERSION: u32 = 0;
+
 /// The main message envelope carrying payload, routing, and metadata.
 #[derive(Clone, Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct EMessage {
@@ -109,8 +117,28 @@ impl EMessage {
             consumed_count: 0,
             deliver_at: None,
             to_worker,
-            version: 0,
+            version: CURRENT_SCHEMA_VERSION,
         }
+    }
+
+    /// Rejects messages whose wire `version` is **newer** than what this build
+    /// understands.
+    ///
+    /// Older versions are accepted (append‑only fields keep decoding fine
+    /// thanks to `bincode`'s tolerant `Decode`, and every field since v0 is
+    /// still populated). This is called at every cross‑process decode site so
+    /// a mixed‑version fleet fails loudly instead of mis‑routing.
+    ///
+    /// # Errors
+    /// Returns `CoreError::Unsupported` when `version > CURRENT_SCHEMA_VERSION`.
+    pub fn check_wire_version(&self) -> Result<(), crate::error::CoreError> {
+        if self.version > CURRENT_SCHEMA_VERSION {
+            return Err(crate::error::CoreError::Unsupported(format!(
+                "message {} uses wire version {}, this node speaks {CURRENT_SCHEMA_VERSION}",
+                self.id, self.version
+            )));
+        }
+        Ok(())
     }
 }
 

@@ -98,6 +98,26 @@ pub trait EConsumer: Send + Sync {
     /// # Errors
     /// Returns `CoreError` if the claim ID is invalid or the operation fails.
     async fn nack(&mut self, claim_id: &str) -> Result<(), CoreError>;
+
+    /// Re‑claims entries that were delivered to (claimed by) some consumer but
+    /// never acknowledged within `min_idle` — typically because the claiming
+    /// consumer or its whole node crashed mid‑flight.
+    ///
+    /// Only durable shared backends can do this (Redis: `XAUTOCLAIM` over the
+    /// consumer‑group PEL; the reclaimed entries are moved to *this* consumer).
+    /// In‑memory backends keep the default no‑op: their pending state lives in
+    /// the process, so a crash loses it anyway and the WAL/replay is the
+    /// recovery path.
+    ///
+    /// The [`ConsumerRouter`](super::consumer_router::ConsumerRouter) dispatch
+    /// loop calls this periodically, so a dead node's half‑processed messages
+    /// get re‑driven by the fleet instead of rotting in the pending list.
+    ///
+    /// # Errors
+    /// Returns `CoreError` if the backend operation fails.
+    async fn claim_stale(&mut self, _min_idle: Duration) -> Result<Vec<ClaimedMessage>, CoreError> {
+        Ok(Vec::new())
+    }
 }
 
 /// A message that has been claimed from a queue, along with its claim identifier

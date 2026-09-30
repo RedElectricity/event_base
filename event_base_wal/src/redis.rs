@@ -219,17 +219,24 @@ impl Wal for RedisWal {
         let blob = encode(&record)?;
         let score = deliver_at_millis(&record);
         let mut conn = self.conn.clone();
-        let _: i64 = ::redis::cmd("HSET")
+        // HSET (payload) + ZADD (due index) run in ONE server‑side script, so
+        // they commit atomically. Split across two round trips, a crash between
+        // them strands the delay either as an indexed record with no payload
+        // (fetch_ready loses it) or a payload with no index (never becomes
+        // due). Redis guarantees EVAL runs without interleaving other clients'
+        // commands, which the WATCH‑transaction API cannot promise here because
+        // the id is minted by INCR *outside* the transaction.
+        const SCHEDULE_LUA: &str = "redis.call('HSET', KEYS[1], ARGV[1], ARGV[2]) \
+                                    redis.call('ZADD', KEYS[2], ARGV[3], ARGV[1]) \
+                                    return 1";
+        let _: i64 = ::redis::cmd("EVAL")
+            .arg(SCHEDULE_LUA)
+            .arg(2)
             .arg(self.delays_key())
+            .arg(self.delay_index_key())
             .arg(&record.message.id)
             .arg(&blob)
-            .query_async(&mut conn)
-            .await
-            .map_err(backend_err)?;
-        let _: i64 = ::redis::cmd("ZADD")
-            .arg(self.delay_index_key())
             .arg(score)
-            .arg(&record.message.id)
             .query_async(&mut conn)
             .await
             .map_err(backend_err)?;

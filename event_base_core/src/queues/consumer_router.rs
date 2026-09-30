@@ -30,6 +30,17 @@ static CONSUMER_ROUTER: OnceLock<RwLock<ConsumerRouter>> = OnceLock::new();
 
 const DEFAULT_BATCH_SIZE: usize = 64;
 
+/// How often a topic dispatcher sweeps for abandoned (unacknowledged) claims
+/// left by consumers/nodes that died mid‑flight. On shared durable backends
+/// (Redis consumer groups) this rescues those entries; in‑memory backends have
+/// no cross‑process pending state, so the sweep is a no‑op there.
+pub const TOPIC_REAP_INTERVAL: Duration = Duration::from_secs(30);
+
+/// A claim must be idle at least this long before a dispatcher reclaims it —
+/// comfortably above a healthy handler's worst case so a slow (but alive)
+/// worker is never robbed mid‑processing.
+pub const TOPIC_REAP_MIN_IDLE: Duration = Duration::from_secs(120);
+
 /// Worker name → (`Worker` instance, join handle).
 type WorkerIndex = HashMap<String, (Arc<Worker>, JoinHandle<()>)>;
 
@@ -299,17 +310,39 @@ impl ConsumerRouter {
             let mut seen_generation = u64::MAX;
             let mut cached_workers: Vec<(String, mpsc::Sender<EMessage>)> = Vec::new();
             let node = crate::try_get_node_name();
+            // Reclaimed PEL entries (from consumers that died mid‑claim) are
+            // drained ahead of fresh claims. In‑memory backends return nothing
+            // here, so this stays empty and behavior is unchanged.
+            let mut reclaimed: std::collections::VecDeque<(EMessage, String)> =
+                std::collections::VecDeque::new();
+            let mut last_reap = tokio::time::Instant::now();
 
             loop {
-                let claimed = match consumer.claim().await {
-                    Ok(Some(c)) => c,
-                    Ok(None) | Err(_) => {
-                        tokio::time::sleep(Duration::from_millis(1)).await;
-                        continue;
+                // ── Periodic stale sweep (crash recovery on shared backends) ──
+                if last_reap.elapsed() >= TOPIC_REAP_INTERVAL {
+                    last_reap = tokio::time::Instant::now();
+                    match consumer.claim_stale(TOPIC_REAP_MIN_IDLE).await {
+                        Ok(entries) => {
+                            for c in entries {
+                                reclaimed.push_back((c.message, c.claim_id));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!(topic = %topic, error = %e, "stale reap failed");
+                        }
                     }
+                }
+
+                let (mut msg, claim_id) = match reclaimed.pop_front() {
+                    Some(pair) => pair,
+                    None => match consumer.claim().await {
+                        Ok(Some(c)) => (c.message, c.claim_id),
+                        Ok(None) | Err(_) => {
+                            tokio::time::sleep(Duration::from_millis(1)).await;
+                            continue;
+                        }
+                    },
                 };
-                let mut msg = claimed.message;
-                let claim_id = claimed.claim_id;
 
                 let current_generation = dispatch_generation.load(Ordering::Acquire);
                 if current_generation != seen_generation || cached_workers.is_empty() {
@@ -351,10 +384,21 @@ impl ConsumerRouter {
                     Some(index) => {
                         let (target, inbox) = cached_workers[index].clone();
                         msg.to_worker = Some(target.clone());
-                        let _ = consumer.ack(&claim_id).await;
-                        if let Err(e) = inbox.try_send(msg) {
-                            tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
-                            seen_generation = u64::MAX;
+                        // Deliver FIRST, ack ONLY on success. A full or closed
+                        // inbox must not cost the message (the old order — ack
+                        // then a fallible try_send — silently dropped it).
+                        match inbox.try_send(msg.clone()) {
+                            Ok(()) => {
+                                let _ = consumer.ack(&claim_id).await;
+                            }
+                            Err(e) => {
+                                tracing::warn!(topic = %topic, worker = %target, error = %e, "local inbox full/closed; requeueing claim");
+                                let _ = consumer.nack(&claim_id).await;
+                                // Invalidate the cache so a *closed* worker is
+                                // dropped from the set on the next pass.
+                                seen_generation = u64::MAX;
+                                tokio::time::sleep(Duration::from_millis(5)).await;
+                            }
                         }
                     }
                     None if msg.to_worker.is_some() => {
@@ -383,10 +427,16 @@ impl ConsumerRouter {
                         cursor = cursor.wrapping_add(1);
                         let (target, inbox) = cached_workers[index].clone();
                         msg.to_worker = Some(target.clone());
-                        let _ = consumer.ack(&claim_id).await;
-                        if let Err(e) = inbox.try_send(msg) {
-                            tracing::warn!(topic = %topic, worker = %target, error = %e, "topic dispatcher local inbox full or closed");
-                            seen_generation = u64::MAX;
+                        match inbox.try_send(msg.clone()) {
+                            Ok(()) => {
+                                let _ = consumer.ack(&claim_id).await;
+                            }
+                            Err(e) => {
+                                tracing::warn!(topic = %topic, worker = %target, error = %e, "local inbox full/closed; requeueing claim");
+                                let _ = consumer.nack(&claim_id).await;
+                                seen_generation = u64::MAX;
+                                tokio::time::sleep(Duration::from_millis(5)).await;
+                            }
                         }
                     }
                 }
