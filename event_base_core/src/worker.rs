@@ -362,7 +362,12 @@ impl Worker {
                         dead_reason.to_string(),
                     )
                     .await?;
-                self.send_to_dead_letter(msg.clone(), DeadReason::Explicit, process_time)
+                // The reason the handler chose *is* the payload of `Dead` —
+                // returning `Timeout` and having the letter relabelled
+                // `Explicit` teaches whoever reads the shelf the wrong lesson
+                // (a stalled handler looks like a deliberate refusal). The WAL
+                // mark above already used it; the letter must agree with it.
+                self.send_to_dead_letter(msg.clone(), dead_reason, process_time)
                     .await?;
                 Ok(())
             }
@@ -423,6 +428,16 @@ impl Worker {
     ) -> Result<(), CoreError> {
         let dead_letter_topic_name = format!("dead_letter.{}", self.topic);
         msg.topic = MessageTopic(dead_letter_topic_name.clone());
+        // Clear the delivery stamp. The dispatcher writes it into the copy it
+        // delivers to a local worker, so this function — which used to change
+        // only the topic — forwarded a letter addressed to the worker that just
+        // failed. Measured with this line removed: the message produced on
+        // `dead_letter.<topic>` carried `Some("<node>@worker-<topic>-<uuid>")`,
+        // that worker's own name. What a stamp naming a worker not local to the
+        // topic costs is measured in `distributed_coordination` stage 4 (never
+        // handled); stage 5 measures the other half — a shelf handler receives
+        // the letter only once the stamp is gone.
+        msg.to_worker = None;
 
         self.wal
             .mark_dead_letter(
@@ -441,11 +456,15 @@ impl Worker {
 
         if self.topic != SYSTEM_TOPIC_AUDIT
             && let Err(e) = self
+                // Say *why* in the audit trail too. A `DeadLettered` record
+                // with an empty error field is a statistic, not an explanation
+                // — and this is the one place an operator who never opens the
+                // WAL can look.
                 .send_audit_msg(self.generate_audit_msg(
                     msg.clone(),
                     AuditResult::Dead,
                     AuditEventType::DeadLettered,
-                    None,
+                    Some(reason.to_string()),
                     Option::from(process_time),
                 ))
                 .await

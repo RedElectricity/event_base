@@ -7,6 +7,7 @@
 //! backend (crossfire), as a single Host process.
 
 use async_trait::async_trait;
+use event_base_core::dead_letter::DeadReason;
 use event_base_core::handler::{Ack, EHandler};
 use event_base_core::message::{DeliveryMode, EMessage, MessagePayload, MessageTopic};
 use event_base_core::middleware::Pipeline;
@@ -294,4 +295,123 @@ async fn coordination_plane_end_to_end() {
         .chain(handler_b.seen_targets.lock().await.iter())
         .any(|t| t.as_deref() == Some("ghost-node@worker-orders-gone"));
     assert!(!ghosts_visible, "ghost-targeted message was processed");
+
+    // ── STAGE 5: a dead letter ARRIVES at the shelf handler ──────────────
+    //
+    // Stage 4 measured that a message stamped for a worker not local to the
+    // topic is never handled. A dead letter was exactly that until
+    // `send_to_dead_letter` cleared the stamp; the older tests could not see it
+    // because they only asserted a `dead_letter.*` message had been *produced*.
+    // This drives the real dispatcher end to end: the shelf must receive it.
+    let shelf: Arc<Mutex<Vec<(Vec<u8>, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+
+    struct Poison;
+    #[async_trait]
+    impl EHandler for Poison {
+        async fn handler(&self, _: &EMessage) -> Ack {
+            Ack::Dead {
+                dead_reason: DeadReason::Other("payload refused".into()),
+            }
+        }
+    }
+    struct Shelf(Arc<Mutex<Vec<(Vec<u8>, Option<String>)>>>);
+    #[async_trait]
+    impl EHandler for Shelf {
+        async fn handler(&self, msg: &EMessage) -> Ack {
+            self.0
+                .lock()
+                .await
+                .push((msg.payload.0.clone(), msg.to_worker.clone()));
+            Ack::Ack
+        }
+    }
+
+    let poison = Arc::new(Poison);
+    router
+        .write()
+        .await
+        .register("orders.poison", poison.clone())
+        .await
+        .expect("register poison topic");
+    router
+        .write()
+        .await
+        .create_worker(
+            "orders.poison",
+            Arc::new(Pipeline::from_arc(poison.clone())),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("poison worker");
+
+    // The shelf is an ordinary topic: it has to be registered before the first
+    // letter is produced, or there is nowhere to route it.
+    let shelf_handler = Arc::new(Shelf(shelf.clone()));
+    router
+        .write()
+        .await
+        .register("dead_letter.orders.poison", shelf_handler.clone())
+        .await
+        .expect("register shelf topic");
+    let shelf_worker = router
+        .write()
+        .await
+        .create_worker(
+            "dead_letter.orders.poison",
+            Arc::new(Pipeline::from_arc(shelf_handler.clone())),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("shelf worker");
+
+    TopicRouter::global()
+        .read()
+        .await
+        .send(
+            "orders.poison",
+            EMessage::new(
+                MessageTopic("orders.poison".into()),
+                MessagePayload(b"poison".to_vec()),
+                DeliveryMode::Standard,
+                None,
+            ),
+            None,
+            None,
+        )
+        .await
+        .expect("send to a topic that refuses it");
+
+    poll_until(
+        Duration::from_secs(20),
+        "the shelf received the dead letter",
+        {
+            let shelf = shelf.clone();
+            move || {
+                let shelf = shelf.clone();
+                async move { !shelf.lock().await.is_empty() }
+            }
+        },
+    )
+    .await;
+
+    let rows = shelf.lock().await;
+    assert_eq!(rows.len(), 1, "one letter, one shelf entry: {rows:?}");
+    assert_eq!(rows[0].0, b"poison".to_vec(), "the payload survived");
+    // Every dispatch rewrites the stamp with the worker it is delivering to
+    // (`is_misrouted` is what the stamp exists to satisfy), so what the shelf
+    // sees is the shelf's own name. The regression this catches is the other
+    // case: with the stamp forwarded out of `send_to_dead_letter`, the letter
+    // named the worker that had just died on `orders.poison`, no worker on this
+    // topic answered to it, and nothing here ever ran — the poll above times
+    // out at 20s, which is exactly how the bug looked from the consumer side.
+    assert_eq!(
+        rows[0].1.as_deref(),
+        Some(shelf_worker.as_str()),
+        "the letter reached the shelf stamped for somebody else"
+    );
+    drop(rows);
 }

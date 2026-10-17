@@ -165,6 +165,31 @@ async fn handle_validation(msg: &EMessage) -> Ack {
 | `NoHandler` | Automatic — no handler registered for the topic |
 | `Other(String)` | Any custom reason |
 
+### Where a dead letter actually goes
+
+There is no dead-letter store to query. A message that dies is republished on the
+topic `dead_letter.<topic>` — so a poison message on `validation` reappears on
+`dead_letter.validation` — and the WAL record for it is marked `Failed` with your
+`dead_reason` as the error, alongside a `DeadLetter` audit record carrying the same
+reason.
+
+That means **a dead letter is only seen if a handler is registered on the
+`dead_letter.*` topic**. Without one, the message stays claimable on that queue and
+nothing delivers it: the only trace left is the `Failed` WAL record:
+
+```rust
+#[handler(topic = "dead_letter.validation")]
+async fn shelf_validation(msg: &EMessage) -> Ack {
+    inspect_and_alert(msg).await;
+    Ack::Ack // consume it here; the bus has no second copy
+}
+```
+
+Register one shelf handler per topic you care about. `dead_letter.*` messages keep
+the original payload, message id, and attempt count; the routing stamp that pinned
+the failed message to a particular worker is cleared on the way out, so any worker
+registered on the shelf topic may receive it.
+
 ---
 
 ## Manual EHandler implementation

@@ -221,36 +221,73 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         .await
         .ok();
 
-    // ── 2: Dead → dead_letter topic + WAL Failed ──
+    // ── 2: Dead → dead_letter topic + WAL Failed, and the letter ARRIVES ──
     ConsumerRouter::global()
         .write()
         .await
         .register(t, h.clone())
         .await
         .expect("r");
+    // A reason the framework would never write itself: `Explicit` was exactly
+    // what the `Dead` arm used to overwrite every handler reason with, so a
+    // test that passes a reason nobody can distinguish cannot catch it.
+    const DEAD_REASON: &str = "payload refused by the handler";
     let pl = Arc::new(Pipeline::new(Box::new(StaticHandler {
         response: Ack::Dead {
-            dead_reason: DeadReason::Explicit,
+            dead_reason: DeadReason::Other(DEAD_REASON.into()),
         },
     })));
     let w = make_worker(t, pl, wp.clone(), None);
-    let m = msg(t, b"2", DeliveryMode::Standard);
+    let mut m = msg(t, b"2", DeliveryMode::Standard);
+    // Reproduce what dispatch really delivers: the dispatcher stamps its
+    // selection into the delivered copy, so a handler always sees a message
+    // addressed to itself. `send_to_dead_letter` used to forward that stamp,
+    // which makes the letter "addressed to a worker not on this topic" — the
+    // relay rule then eats it. See the comment at the fix for the citations.
+    m.to_worker = Some(w.name.clone());
     let mid = m.id.clone();
     let bb = gp.sent.lock().await.len();
     w.test_process_msg(m).await.expect("2");
     let ms = gp.sent.lock().await;
     let n: Vec<_> = ms.iter().skip(bb).collect();
-    assert!(n.iter().any(|x| x.topic.0.starts_with("dead_letter.")));
+    let letter = n
+        .iter()
+        .find(|x| x.topic.0 == format!("dead_letter.{t}"))
+        .expect("the dead letter was produced");
     assert!(
-        n.iter()
-            .filter(|x| x.topic.0 == SYSTEM_TOPIC_WAL_SYNC)
-            .any(|x| {
-                bincode::decode_from_slice::<WalSyncMessage, _>(
-                    &x.payload.0,
-                    bincode::config::standard(),
-                )
-                .is_ok_and(|(s, _)| s.status == WalRecordState::Failed && s.message_id == mid)
-            })
+        letter.to_worker.is_none(),
+        "a dead letter must not stay addressed to the worker that just failed: \
+         the router would relay it to `MAX_TARGETED_HOPS` and drop it. Found {:?}.",
+        letter.to_worker
+    );
+    assert_eq!(
+        letter.id, mid,
+        "the letter is the same message, off its door"
+    );
+    let failed: Vec<_> = n
+        .iter()
+        .filter(|x| x.topic.0 == SYSTEM_TOPIC_WAL_SYNC)
+        .filter_map(|x| {
+            bincode::decode_from_slice::<WalSyncMessage, _>(
+                &x.payload.0,
+                bincode::config::standard(),
+            )
+            .ok()
+            .map(|(s, _)| s)
+        })
+        .filter(|s| s.status == WalRecordState::Failed && s.message_id == mid)
+        .collect();
+    assert!(
+        failed
+            .iter()
+            .any(|s| { s.error.as_deref().is_some_and(|e| e.contains(DEAD_REASON)) }),
+        "the shelf record must carry the reason the handler gave"
+    );
+    assert!(
+        !failed
+            .iter()
+            .any(|s| s.error.as_deref() == Some(DeadReason::Explicit.to_string().as_str())),
+        "the reason was overwritten on the way out: {failed:?}"
     );
     drop(ms);
     ConsumerRouter::global()
@@ -427,11 +464,43 @@ async fn worker_process_msg_and_wal_sync_coverage() {
     }
     let pl = Arc::new(Pipeline::new(Box::new(Slow)));
     let w = make_worker(t, pl, wp.clone(), Some(Duration::from_millis(10)));
-    w.test_process_msg(msg(t, b"8", DeliveryMode::Standard))
-        .await
-        .expect("8");
+    let mut m8 = msg(t, b"8", DeliveryMode::Standard);
+    m8.to_worker = Some(w.name.clone());
+    let mid8 = m8.id.clone();
+    let b8 = gp.sent.lock().await.len();
+    w.test_process_msg(m8).await.expect("8");
     let ms = gp.sent.lock().await;
-    assert!(ms.iter().any(|x| x.topic.0.starts_with("dead_letter.")));
+    let n8: Vec<_> = ms.iter().skip(b8).collect();
+    let letter8 = n8
+        .iter()
+        .find(|x| x.topic.0.starts_with("dead_letter."))
+        .expect("a timed‑out message is dead‑lettered");
+    assert!(
+        letter8.to_worker.is_none(),
+        "same stamp bug as stage 2, this time on the framework's own Dead arm: {:?}",
+        letter8.to_worker
+    );
+    // The one reason the framework writes by itself must reach the shelf: the
+    // `Dead` arm relabelled it `Explicit`, so a handler that ran too long read
+    // as a handler that refused.
+    assert!(
+        n8.iter()
+            .filter(|x| x.topic.0 == SYSTEM_TOPIC_WAL_SYNC)
+            .filter_map(|x| {
+                bincode::decode_from_slice::<WalSyncMessage, _>(
+                    &x.payload.0,
+                    bincode::config::standard(),
+                )
+                .ok()
+                .map(|(s, _)| s)
+            })
+            .any(|s| {
+                s.message_id == mid8
+                    && s.status == WalRecordState::Failed
+                    && s.error.as_deref() == Some(DeadReason::Timeout.to_string().as_str())
+            }),
+        "a timeout must be recorded as a timeout"
+    );
     drop(ms);
     ConsumerRouter::global()
         .write()
@@ -539,15 +608,46 @@ async fn worker_process_msg_and_wal_sync_coverage() {
         response: Ack::Ack,
     })));
     let w = make_worker(t, pl, wp.clone(), None);
-    let m = msg(t, b"12", DeliveryMode::Standard);
+    let mut m = msg(t, b"12", DeliveryMode::Standard);
+    // A stamp naming some *other* worker (the one that died last on this door).
+    m.to_worker = Some("whoever-failed-before-me".into());
     let b = gp.sent.lock().await.len();
     w.test_send_to_dead_letter(m, DeadReason::Timeout, Duration::from_millis(50))
         .await
         .expect("dl");
     let ms = gp.sent.lock().await;
     let n: Vec<_> = ms.iter().skip(b).collect();
-    assert!(n.iter().any(|x| x.topic.0 == format!("dead_letter.{}", t)));
+    let letter = n
+        .iter()
+        .find(|x| x.topic.0 == format!("dead_letter.{}", t))
+        .expect("the dead letter was produced");
+    assert!(
+        letter.to_worker.is_none(),
+        "`send_to_dead_letter` rewrote only the topic, so the letter stayed \
+         addressed to a stranger and was dropped after `MAX_TARGETED_HOPS` \
+         relays: {:?}",
+        letter.to_worker
+    );
     assert!(n.iter().any(|x| x.topic.0 == SYSTEM_TOPIC_AUDIT));
+    // The audit trail is the only view an operator has who never opens the WAL,
+    // so it must say why, not just that.
+    assert!(
+        n.iter()
+            .filter(|x| x.topic.0 == SYSTEM_TOPIC_AUDIT)
+            .filter_map(|x| {
+                bincode::decode_from_slice::<AuditRecord, _>(
+                    &x.payload.0,
+                    bincode::config::standard(),
+                )
+                .ok()
+                .map(|(r, _)| r)
+            })
+            .any(|r| {
+                matches!(r.result, AuditResult::Dead)
+                    && r.error.as_deref() == Some(DeadReason::Timeout.to_string().as_str())
+            }),
+        "the DeadLettered audit record used to carry an empty error field"
+    );
     drop(ms);
     ConsumerRouter::global()
         .write()
